@@ -451,8 +451,9 @@ function updateMarine(actor, time) {
 
 function updateGhost(actor, time) {
     if (!actor.target || actor.target.isDead) {
-        if (actor.map.playerActors.length > 0) {
-            actor.target = actor.map.playerActors[Math.floor(Math.random() * actor.map.playerActors.length)];
+        const candidates = actor.map.playerActors.filter(a => !a.isDead);
+        if (candidates.length > 0) {
+            actor.target = candidates[Math.floor(Math.random() * candidates.length)];
             actor.targetOutOfSightCounter = 0;
         }
     }
