@@ -196,6 +196,7 @@ class Actor {
     }
 
     onDamage(damageAmount) {
+        if (this.type === ACTORS.marine && typeof DebugMenu !== 'undefined' && DebugMenu.godMode) return false;
         this.health -= damageAmount;
         if (this.type === ACTORS.marine) {
             if (gameScene) gameScene.playGameSound('playerHurt');

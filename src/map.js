@@ -154,6 +154,25 @@ class GameMap {
         }
     }
 
+    // Remove existing tile at (tileX, tileY) and optionally place a new one.
+    // tileName = null erases, otherwise a key from TILES.
+    setTile(tileX, tileY, tileName) {
+        const matchPos = (t) => {
+            const tx = Math.floor(t.pos.x / TILE_SIZE);
+            const ty = Math.floor(t.pos.y / TILE_SIZE);
+            return tx === tileX && ty === tileY;
+        };
+        this.tiles       = this.tiles.filter(t => !matchPos(t));
+        this.startTiles  = this.startTiles.filter(t => !matchPos(t));
+        this.spawnTiles  = this.spawnTiles.filter(t => !matchPos(t));
+        if (this.tileGrid && this.tileGrid[tileX]) {
+            this.tileGrid[tileX][tileY] = tileName || null;
+        }
+        if (tileName && TILES[tileName]) {
+            this.addTile(tileX, tileY, TILES[tileName], tileName);
+        }
+    }
+
     addObject(obj) {
         this.objects.push(obj);
     }

@@ -170,6 +170,7 @@ class GameScene extends Phaser.Scene {
         this.chatText.setVisible(false);
 
         this.playMusicTrack('AtraMateria', 1, false);
+        DebugMenu.init(this);
     }
 
     createSeededRandom(seed) {
@@ -441,6 +442,8 @@ class GameScene extends Phaser.Scene {
         } else if (event.keyCode === Phaser.Input.Keyboard.KeyCodes.R && this.keys.ctrl.isDown) {
             // Restart
             this.scene.restart();
+        } else if (event.keyCode === 192) { // backtick `
+            DebugMenu.toggle();
         }
     }
 
@@ -536,6 +539,9 @@ class GameScene extends Phaser.Scene {
 
         // Music crossfading
         this.updateMusicCrossfade(time);
+
+        // Debug
+        DebugMenu.update(this);
     }
 
     updateStoryInfo(time) {
