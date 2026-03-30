@@ -160,6 +160,14 @@ class Particle {
             const s = VectorMath.rotate(len * 0.5, 0, this.angle);
             const e = VectorMath.rotate(-len * 0.5, 0, this.angle);
             graphics.lineBetween(cx + s.x, cy + s.y, cx + e.x, cy + e.y);
+        } else if (this.type === 'arc') {
+            // Arc segment - used for marine death circle fragments
+            const r = this.data.radius * this.scale;
+            const startAngle = this.data.startAngle + this.angle;
+            graphics.lineStyle(1.5, hex, alpha);
+            graphics.beginPath();
+            graphics.arc(cx, cy, r, startAngle, startAngle + this.data.arcLength);
+            graphics.strokePath();
         } else if (this.type === 'dot') {
             // Fading dot/spark
             const r = this.data.radius * alpha;
