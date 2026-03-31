@@ -134,7 +134,13 @@ class GameMap {
     }
 
     resetSpawnTimer() {
-        this.nextSpawnTimer = 1 + Math.random() * 2;
+        this.nextSpawnTimer = (this.spawnIntervalOverride != null)
+            ? this.spawnIntervalOverride
+            : 1 + Math.random() * 2;
+    }
+
+    getTileNameAt(tileX, tileY) {
+        return (this.tileGrid && this.tileGrid[tileX]) ? (this.tileGrid[tileX][tileY] || null) : null;
     }
 
     addEnemyActor(actor) {

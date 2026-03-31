@@ -199,7 +199,9 @@ const TILES = {
                 }
             }
             if (tile.nextSpawn < 0 && tile.allowSpawn) {
-                tile.nextSpawn = 4 + Math.random() * 3;
+                tile.nextSpawn = (window._debugIndieSpawnInterval != null)
+                    ? window._debugIndieSpawnInterval
+                    : 4 + Math.random() * 3;
                 tile.map.addEnemyActor(new Actor(ACTORS.ghost, tile.pos.x, tile.pos.y, tile.map));
             }
         },

@@ -1,71 +1,173 @@
 // In-game debug menu — toggle with backtick (`)
-// MAP tab: tile painter, spawn/kill controls, map export
-// EVENTS tab: view/fire/reset existing events, compose new dialogue events
+// Tabs: MAP | EVENTS | TRIGGERS
+
+// All story-state globals (module-level lets are on window in non-module scripts)
+const _TRIGGER_DEFS = [
+    { name: '_playerHasDied',        label: 'Player died',              reset: 0 },
+    { name: '_superGhostKilled',     label: 'Super ghost killed',       reset: false },
+    { name: '_spawnBlockedByPlayer', label: 'Spawn blocked',            reset: 0 },
+    { name: '_stairsSpottedByPlayer',label: 'Stairs spotted',           reset: 0 },
+    { name: '_s1SpottedByPlayer',    label: 'Survivor 1 spotted',       reset: 0 },
+    { name: '_s1SpottedByMedic',     label: 'Survivor 1 → medic',       reset: false },
+    { name: '_s1GetBackMarker',      label: 'Get-back marker',          reset: 0 },
+    { name: '_storyMarkerLvl2',      label: 'Story marker lvl 2',       reset: 0 },
+    { name: '_storyMarkerLvl3',      label: 'Story marker lvl 3',       reset: 0 },
+    { name: '_secondLevelStairs',    label: '2nd level stairs',         reset: 0 },
+    { name: '_s2SpottedByPlayer',    label: 'Survivor 2 spotted',       reset: 0 },
+    { name: '_s2Tile',               label: 'Survivor 2 tile ref',      reset: null },
+];
 
 const DebugMenu = {
     visible:      false,
-    activeTab:    'map',     // 'map' | 'events'
+    activeTab:    'map',
 
     // MAP state
     selectedTile: 'block',
     editMapIndex: 0,
     godMode:      false,
     _painting:    false,
+    _undoStack:   [],
 
     // EVENTS state
-    _draft: {
-        condition: 'manual',
-        elements:  [],       // [{ speakerKey: 'playerInfo_0', text: '' }, ...]
-    },
-    _customEvents: [],       // saved custom events (same shape as _draft + triggered flag)
+    _draft:         { condition: 'manual', elements: [] },
+    _customEvents:  [],
 
-    // ------------------------------------------------------------------ init
+    // Actor inspector tooltip element
+    _tooltip: null,
+
+    // ── init ──────────────────────────────────────────────────────────────────
 
     init(gs) {
+        // Load persisted custom events
+        try {
+            const saved = localStorage.getItem('ghostTacticsDebugEvents');
+            if (saved) this._customEvents = JSON.parse(saved);
+        } catch(e) {}
+
         this._buildPanel();
+        this._buildTooltip();
+
+        // Tile painting
         gs.input.on('pointerdown', (p) => { this._painting = true;  this._tryPaint(p, gs); });
-        gs.input.on('pointermove', (p) => { if (this._painting) this._tryPaint(p, gs); });
-        gs.input.on('pointerup',   ()  => { this._painting = false; });
+        gs.input.on('pointermove', (p) => {
+            if (this._painting) this._tryPaint(p, gs);
+            this._updateInspector(p, gs);
+        });
+        gs.input.on('pointerup', () => { this._painting = false; });
     },
 
     toggle() {
         this.visible = !this.visible;
         this._panel.style.display = this.visible ? 'flex' : 'none';
+        if (!this.visible && this._tooltip) this._tooltip.style.display = 'none';
     },
 
     // Called every frame from gameScene
     update(gs) {
-        // God mode
+        // God mode — uses actor.type.maxHealth (not actor.maxHealth)
         if (this.godMode) {
             for (const map of gs.maps) {
                 for (const actor of map.playerActors) {
-                    if (!actor.isDead) actor.health = Math.max(actor.health, actor.maxHealth);
+                    if (!actor.isDead) actor.health = actor.type.maxHealth;
                 }
             }
         }
-        // Fire auto-condition custom events
+        // Auto-fire custom events by condition
         for (const ev of this._customEvents) {
             if (!ev.triggered && this._evalCondition(ev.condition, gs)) {
                 ev.triggered = true;
                 this._runCustomEvent(ev, gs);
+                this._saveCustomEvents();
             }
         }
     },
 
-    // ------------------------------------------------------------------ MAP painting
+    // ── tile painting ─────────────────────────────────────────────────────────
 
     _tryPaint(pointer, gs) {
         if (!this.visible || gs.atTitleScreen || this.activeTab !== 'map') return;
         const worldX = pointer.x + gs.viewPos.x;
         const worldY = pointer.y + gs.viewPos.y;
-        const tileX = Math.floor(worldX / TILE_SIZE);
-        const tileY = Math.floor(worldY / TILE_SIZE);
+        const tileX  = Math.floor(worldX / TILE_SIZE);
+        const tileY  = Math.floor(worldY / TILE_SIZE);
         if (tileX < 0 || tileX >= MAP_WIDTH || tileY < 0 || tileY >= MAP_HEIGHT) return;
+        const map      = gs.maps[this.editMapIndex];
         const tileName = this.selectedTile === '(erase)' ? null : this.selectedTile;
-        gs.maps[this.editMapIndex].setTile(tileX, tileY, tileName);
+        // Push undo entry
+        const prev = map.getTileNameAt(tileX, tileY);
+        if (prev !== tileName) {
+            this._undoStack.push({ mapIndex: this.editMapIndex, tileX, tileY, tileName: prev });
+            if (this._undoStack.length > 20) this._undoStack.shift();
+            map.setTile(tileX, tileY, tileName);
+        }
     },
 
-    // ------------------------------------------------------------------ panel build
+    _undo() {
+        if (!gameScene) return;
+        const op = this._undoStack.pop();
+        if (!op) return;
+        gameScene.maps[op.mapIndex].setTile(op.tileX, op.tileY, op.tileName);
+    },
+
+    // ── actor inspector ───────────────────────────────────────────────────────
+
+    _buildTooltip() {
+        const t = document.createElement('div');
+        t.id = 'debug-tooltip';
+        Object.assign(t.style, {
+            display:    'none',
+            position:   'fixed',
+            background: 'rgba(5,10,20,0.92)',
+            border:     '1px solid #40c0ff',
+            color:      '#80e0ff',
+            fontFamily: "'Courier New', monospace",
+            fontSize:   '11px',
+            padding:    '5px 8px',
+            lineHeight: '1.6',
+            zIndex:     '10000',
+            pointerEvents: 'none',
+            whiteSpace: 'pre',
+        });
+        document.body.appendChild(t);
+        this._tooltip = t;
+    },
+
+    _updateInspector(pointer, gs) {
+        if (!this.visible || !this._tooltip) return;
+        const map = gs.currentRenderMap;
+        if (!map) { this._tooltip.style.display = 'none'; return; }
+
+        const worldX = pointer.x + gs.viewPos.x;
+        const worldY = pointer.y + gs.viewPos.y;
+        const RADIUS = 40;
+        let nearest = null, nearestDist = Infinity;
+
+        for (const actor of [...map.playerActors, ...map.enemyActors]) {
+            if (actor.isDead) continue;
+            const dx = actor.pos.x - worldX, dy = actor.pos.y - worldY;
+            const d = dx * dx + dy * dy;
+            if (d < RADIUS * RADIUS && d < nearestDist) { nearest = actor; nearestDist = d; }
+        }
+
+        if (!nearest) { this._tooltip.style.display = 'none'; return; }
+
+        const isPlayer = !!nearest.playerInfo;
+        const name  = isPlayer ? nearest.playerInfo.name : 'Ghost';
+        const hp    = Math.ceil(nearest.health);
+        const maxHp = nearest.type.maxHealth > 1e8 ? '∞' : nearest.type.maxHealth;
+        const tgt   = nearest.target ? (nearest.target.playerInfo ? nearest.target.playerInfo.fName : 'Ghost') : '—';
+        const path  = nearest.path ? nearest.path.length + ' nodes' : '—';
+
+        this._tooltip.textContent = `${name}\nHP: ${hp} / ${maxHp}\nTarget: ${tgt}\nPath: ${path}`;
+        const ev = pointer.event;
+        if (ev) {
+            this._tooltip.style.left = (ev.clientX + 14) + 'px';
+            this._tooltip.style.top  = (ev.clientY - 10) + 'px';
+        }
+        this._tooltip.style.display = 'block';
+    },
+
+    // ── panel skeleton ────────────────────────────────────────────────────────
 
     _buildPanel() {
         const panel = document.createElement('div');
@@ -75,7 +177,7 @@ const DebugMenu = {
             position:      'fixed',
             top:           '10px',
             right:         '10px',
-            width:         '240px',
+            width:         '220px',
             maxHeight:     '92vh',
             overflowY:     'auto',
             background:    'rgba(5,10,20,0.96)',
@@ -99,80 +201,124 @@ const DebugMenu = {
         const p = this._panel;
         p.innerHTML = '';
 
-        // Header
         const hdr = document.createElement('div');
-        hdr.style.cssText = 'color:#80e0ff;border-bottom:1px solid #204060;padding-bottom:3px;margin-bottom:4px;';
         hdr.textContent = 'DEBUG  [` toggle]';
+        hdr.style.cssText = 'color:#80e0ff;border-bottom:1px solid #204060;padding-bottom:3px;margin-bottom:4px;';
         p.appendChild(hdr);
 
-        // Tabs
         const tabRow = this._row(p);
         tabRow.style.marginBottom = '5px';
-        this._btn(tabRow, 'MAP',    this.activeTab === 'map',    () => { this.activeTab = 'map';    this._rebuildPanel(); });
-        this._btn(tabRow, 'EVENTS', this.activeTab === 'events', () => { this.activeTab = 'events'; this._rebuildPanel(); });
-
-        if (this.activeTab === 'map') {
-            this._buildMapTab(p);
-        } else {
-            this._buildEventsTab(p);
-        }
-    },
-
-    // ------------------------------------------------------------------ MAP tab
-
-    _buildMapTab(p) {
-        // Floor selector
-        this._label(p, 'FLOOR');
-        const floorRow = this._row(p);
-        for (let i = 0; i < NUM_MAPS; i++) {
-            this._btn(floorRow, `F${i + 1}`, i === this.editMapIndex, () => {
-                this.editMapIndex = i;
+        for (const [id, label] of [['map','MAP'],['events','EVENTS'],['triggers','TRIGGERS']]) {
+            this._btn(tabRow, label, this.activeTab === id, () => {
+                this.activeTab = id;
                 this._rebuildPanel();
             });
         }
 
+        if      (this.activeTab === 'map')      this._buildMapTab(p);
+        else if (this.activeTab === 'events')   this._buildEventsTab(p);
+        else if (this.activeTab === 'triggers') this._buildTriggersTab(p);
+    },
+
+    // ── MAP tab ───────────────────────────────────────────────────────────────
+
+    _buildMapTab(p) {
+        // Floor + undo row
+        this._label(p, 'FLOOR');
+        const floorRow = this._row(p);
+        for (let i = 0; i < NUM_MAPS; i++) {
+            this._btn(floorRow, `F${i+1}`, i === this.editMapIndex, () => {
+                this.editMapIndex = i; this._rebuildPanel();
+            });
+        }
+        const undoBtn = this._makeBtn(`Undo (${this._undoStack.length})`, false);
+        undoBtn.style.marginTop = '3px';
+        undoBtn.addEventListener('click', () => { this._undo(); this._rebuildPanel(); });
+        p.appendChild(undoBtn);
+
         // Tile palette
         this._label(p, 'PAINT TILE');
-        const tileNames = ['(erase)', ...Object.keys(TILES)];
-        for (const name of tileNames) {
+        for (const name of ['(erase)', ...Object.keys(TILES)]) {
             const isErase  = name === '(erase)';
             const tileType = isErase ? null : TILES[name];
             const ec       = tileType && tileType.editColor;
             const bg       = ec ? `rgba(${ec.r},${ec.g},${ec.b},0.25)` : 'rgba(60,60,60,0.2)';
             const selected = this.selectedTile === name;
             const btn      = this._makeBtn(isErase ? '× erase' : name, selected);
-            btn.style.background    = selected ? 'rgba(64,192,255,0.22)' : bg;
-            btn.style.display       = 'block';
-            btn.style.width         = '100%';
-            btn.style.textAlign     = 'left';
-            btn.style.marginBottom  = '2px';
+            btn.style.background   = selected ? 'rgba(64,192,255,0.22)' : bg;
+            btn.style.display      = 'block';
+            btn.style.width        = '100%';
+            btn.style.textAlign    = 'left';
+            btn.style.marginBottom = '2px';
             btn.addEventListener('click', () => { this.selectedTile = name; this._rebuildPanel(); });
             p.appendChild(btn);
         }
 
         // Actions
         this._label(p, 'ACTIONS');
-        const actions = [
+        for (const [label, fn] of [
             ['Spawn Ghost',       () => this._spawnAtCenter(false)],
             ['Spawn Super Ghost', () => this._spawnAtCenter(true)],
             ['Kill All Enemies',  () => this._killAllEnemies()],
             [this.godMode ? 'God Mode: ON ✓' : 'God Mode: OFF',
                                   () => { this.godMode = !this.godMode; this._rebuildPanel(); }],
             ['Export Map JSON',   () => this._exportMap()],
-        ];
-        for (const [label, fn] of actions) {
+        ]) {
             const btn = this._makeBtn(label, false);
             btn.style.cssText += ';display:block;width:100%;text-align:left;margin-bottom:2px;';
             btn.addEventListener('click', fn);
             p.appendChild(btn);
         }
+
+        // Spawn rate sliders
+        this._label(p, 'SPAWN RATE  (this floor)');
+        const gs = gameScene;
+        if (gs) {
+            const map = gs.maps[this.editMapIndex];
+            const curOverride = map.spawnIntervalOverride;
+            this._makeSlider(p, 'Map interval (s)', 0.5, 10, 0.5,
+                curOverride != null ? curOverride : 2,
+                (v) => {
+                    map.spawnIntervalOverride = v;
+                    map.nextSpawnTimer = Math.min(map.nextSpawnTimer, v);
+                },
+                () => { map.spawnIntervalOverride = null; }
+            );
+            const indieVal = window._debugIndieSpawnInterval;
+            this._makeSlider(p, 'IndieSpawn interval (s)', 0.5, 15, 0.5,
+                indieVal != null ? indieVal : 5.5,
+                (v) => { window._debugIndieSpawnInterval = v; },
+                () => { window._debugIndieSpawnInterval = null; }
+            );
+        }
+
+        // Settings
+        this._label(p, 'SETTINGS');
+        if (gs) {
+            this._makeSlider(p, `Text delay: ${gs._settings.textDelay}ms`, 5, 120, 5,
+                gs._settings.textDelay,
+                (v) => { gs._settings.textDelay = v; this._rebuildPanel(); }
+            );
+            this._makeSlider(p, `Master vol: ${Math.round(gs._settings.masterVolume*100)}%`, 0, 1, 0.05,
+                gs._settings.masterVolume,
+                (v) => { gs._settings.masterVolume = v; this._rebuildPanel(); }
+            );
+            this._makeSlider(p, `Music vol: ${Math.round(gs._settings.musicVolume*100)}%`, 0, 1, 0.05,
+                gs._settings.musicVolume,
+                (v) => {
+                    gs._settings.musicVolume = v;
+                    if (gs.currentMusic) gs.currentMusic.volume = v * gs._settings.masterVolume;
+                    this._rebuildPanel();
+                }
+            );
+        }
     },
 
-    // ------------------------------------------------------------------ EVENTS tab
+    // ── EVENTS tab ────────────────────────────────────────────────────────────
 
     _buildEventsTab(p) {
-        // ---- Existing events (from events.js) ----
         this._label(p, 'STORY EVENTS');
+
         if (!gameScene) {
             const note = document.createElement('div');
             note.style.color = '#305870';
@@ -180,48 +326,57 @@ const DebugMenu = {
             p.appendChild(note);
         } else {
             gameScene.events.forEach((ev, i) => {
-                // First dialogue line as preview
-                const firstLine = ev.run.toString().match(/"([^"]{1,40})"/);
-                const preview   = firstLine ? firstLine[1] : `Event ${i + 1}`;
-                const row = document.createElement('div');
-                row.style.cssText = 'display:flex;align-items:center;gap:3px;margin-bottom:3px;';
+                // Condition trace
+                let condResult = '?';
+                try { condResult = ev.condition(gameScene) ? '▶ true' : '✕ false'; } catch(e) { condResult = 'ERR'; }
+                const condColor = condResult.startsWith('▶') ? '#40ff80' : '#305870';
 
-                const indicator = document.createElement('span');
-                indicator.textContent = ev.triggered ? '✓' : '○';
-                indicator.style.cssText = `color:${ev.triggered ? '#305870' : '#40c0ff'};min-width:12px;`;
-                row.appendChild(indicator);
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'border:1px solid #152030;padding:3px 4px;margin-bottom:3px;';
 
-                const lbl = document.createElement('span');
-                lbl.textContent = preview.length > 22 ? preview.slice(0, 22) + '…' : preview;
-                lbl.style.cssText = `flex:1;overflow:hidden;color:${ev.triggered ? '#305870' : '#40c0ff'};`;
-                lbl.title = preview;
-                row.appendChild(lbl);
+                // Top row: index + condition result + fire + reset
+                const topRow = this._row(wrap);
+                topRow.style.alignItems = 'center';
+                topRow.style.marginBottom = '2px';
+
+                const idxSpan = document.createElement('span');
+                idxSpan.textContent = `#${i+1}`;
+                idxSpan.style.cssText = `color:${ev.triggered ? '#305870' : '#40c0ff'};min-width:22px;`;
+                topRow.appendChild(idxSpan);
+
+                const condSpan = document.createElement('span');
+                condSpan.textContent = condResult;
+                condSpan.style.cssText = `color:${condColor};flex:1;font-size:10px;`;
+                topRow.appendChild(condSpan);
 
                 const fireBtn = this._makeBtn('▶', false);
                 fireBtn.title = 'Fire now';
                 fireBtn.addEventListener('click', () => {
-                    ev.triggered = true;
-                    ev.run(gameScene);
-                    this._rebuildPanel();
+                    ev.triggered = true; ev.run(gameScene); this._rebuildPanel();
                 });
-                row.appendChild(fireBtn);
+                topRow.appendChild(fireBtn);
 
                 const resetBtn = this._makeBtn('↺', ev.triggered);
-                resetBtn.title = 'Reset (allow re-fire)';
-                resetBtn.addEventListener('click', () => {
-                    ev.triggered = false;
-                    this._rebuildPanel();
-                });
-                row.appendChild(resetBtn);
+                resetBtn.title = 'Reset';
+                resetBtn.addEventListener('click', () => { ev.triggered = false; this._rebuildPanel(); });
+                topRow.appendChild(resetBtn);
 
-                p.appendChild(row);
+                // Preview line
+                const firstLine = ev.run.toString().match(/"([^"]{1,50})"/);
+                if (firstLine) {
+                    const prev = document.createElement('div');
+                    prev.style.cssText = `color:${ev.triggered ? '#203040' : '#305870'};font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;`;
+                    prev.textContent = firstLine[1];
+                    prev.title = firstLine[1];
+                    wrap.appendChild(prev);
+                }
+                p.appendChild(wrap);
             });
         }
 
-        // ---- Compose new event ----
+        // Compose
         this._label(p, 'COMPOSE NEW EVENT');
 
-        // Condition picker
         const condRow = document.createElement('div');
         condRow.style.cssText = 'display:flex;align-items:center;gap:4px;margin-bottom:4px;';
         const condLbl = document.createElement('span');
@@ -229,37 +384,25 @@ const DebugMenu = {
         condLbl.style.color = '#305870';
         condRow.appendChild(condLbl);
 
-        const condSelect = document.createElement('select');
-        condSelect.style.cssText = `
-            flex:1; background:#080e18; border:1px solid #204060;
-            color:#40c0ff; font-family:'Courier New',monospace; font-size:11px; padding:1px;
-        `;
-        const condOptions = [
-            ['manual',  'Manual only'],
-            ['floor0',  'Floor 1 entered'],
-            ['floor1',  'Floor 2 entered'],
-            ['floor2',  'Floor 3 entered'],
-            ['floor3',  'Floor 4 entered'],
-            ['floor4',  'Floor 5 entered'],
-        ];
-        for (const [val, text] of condOptions) {
+        const condSel = document.createElement('select');
+        condSel.style.cssText = 'flex:1;background:#080e18;border:1px solid #204060;color:#40c0ff;font-family:\'Courier New\',monospace;font-size:11px;padding:1px;';
+        for (const [val, txt] of [
+            ['manual','Manual only'],['floor0','Floor 1 entered'],['floor1','Floor 2 entered'],
+            ['floor2','Floor 3 entered'],['floor3','Floor 4 entered'],['floor4','Floor 5 entered'],
+        ]) {
             const opt = document.createElement('option');
-            opt.value = val;
-            opt.textContent = text;
+            opt.value = val; opt.textContent = txt;
             if (val === this._draft.condition) opt.selected = true;
-            condSelect.appendChild(opt);
+            condSel.appendChild(opt);
         }
-        condSelect.addEventListener('change', () => { this._draft.condition = condSelect.value; });
-        condRow.appendChild(condSelect);
+        condSel.addEventListener('change', () => { this._draft.condition = condSel.value; });
+        condRow.appendChild(condSel);
         p.appendChild(condRow);
 
-        // Dialogue lines
         const linesContainer = document.createElement('div');
-        linesContainer.id = 'debug-lines';
         p.appendChild(linesContainer);
         this._renderDraftLines(linesContainer);
 
-        // Add line button
         const addLineBtn = this._makeBtn('+ Add Line', false);
         addLineBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-bottom:4px;';
         addLineBtn.addEventListener('click', () => {
@@ -268,139 +411,174 @@ const DebugMenu = {
         });
         p.appendChild(addLineBtn);
 
-        // Save event button
         const saveBtn = this._makeBtn('Save Event', false);
         saveBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-bottom:4px;border-color:#40c0ff;';
         saveBtn.addEventListener('click', () => {
-            if (this._draft.elements.length === 0) return;
+            if (!this._draft.elements.length) return;
             this._customEvents.push({
                 condition: this._draft.condition,
                 elements:  this._draft.elements.map(e => ({ ...e })),
                 triggered: false,
             });
+            this._saveCustomEvents();
             this._draft = { condition: 'manual', elements: [] };
             this._rebuildPanel();
         });
         p.appendChild(saveBtn);
 
-        // ---- Custom events list ----
         if (this._customEvents.length > 0) {
             this._label(p, 'CUSTOM EVENTS');
             this._customEvents.forEach((ev, i) => {
-                const firstText = ev.elements[0] ? ev.elements[0].text : '(empty)';
-                const row = document.createElement('div');
-                row.style.cssText = 'display:flex;align-items:center;gap:3px;margin-bottom:3px;';
+                const row = this._row(p);
+                row.style.cssText += ';align-items:center;margin-bottom:3px;';
 
-                const indicator = document.createElement('span');
-                indicator.textContent = ev.triggered ? '✓' : '○';
-                indicator.style.cssText = `color:${ev.triggered ? '#305870' : '#40c0ff'};min-width:12px;`;
-                row.appendChild(indicator);
+                const ind = document.createElement('span');
+                ind.textContent = ev.triggered ? '✓' : '○';
+                ind.style.cssText = `color:${ev.triggered ? '#305870' : '#40c0ff'};min-width:12px;`;
+                row.appendChild(ind);
 
                 const lbl = document.createElement('span');
-                const preview = firstText.length > 18 ? firstText.slice(0, 18) + '…' : firstText;
-                lbl.textContent = preview;
+                const txt = ev.elements[0] ? ev.elements[0].text : '(empty)';
+                lbl.textContent = txt.length > 16 ? txt.slice(0,16)+'…' : txt;
                 lbl.style.cssText = 'flex:1;overflow:hidden;';
-                lbl.title = firstText;
+                lbl.title = txt;
                 row.appendChild(lbl);
 
-                const fireBtn = this._makeBtn('▶', false);
-                fireBtn.title = 'Fire now';
-                fireBtn.addEventListener('click', () => {
-                    ev.triggered = true;
-                    this._runCustomEvent(ev, gameScene);
-                    this._rebuildPanel();
-                });
-                row.appendChild(fireBtn);
-
-                const resetBtn = this._makeBtn('↺', ev.triggered);
-                resetBtn.title = 'Reset';
-                resetBtn.addEventListener('click', () => { ev.triggered = false; this._rebuildPanel(); });
-                row.appendChild(resetBtn);
-
-                const delBtn = this._makeBtn('×', false);
-                delBtn.title = 'Delete';
-                delBtn.addEventListener('click', () => {
-                    this._customEvents.splice(i, 1);
-                    this._rebuildPanel();
-                });
-                row.appendChild(delBtn);
-
-                p.appendChild(row);
+                for (const [btnTxt, title, fn] of [
+                    ['▶', 'Fire', () => { ev.triggered = true; this._runCustomEvent(ev, gameScene); this._saveCustomEvents(); this._rebuildPanel(); }],
+                    ['↺', 'Reset', () => { ev.triggered = false; this._saveCustomEvents(); this._rebuildPanel(); }],
+                    ['×', 'Delete', () => { this._customEvents.splice(i,1); this._saveCustomEvents(); this._rebuildPanel(); }],
+                ]) {
+                    const b = this._makeBtn(btnTxt, false);
+                    b.title = title;
+                    b.addEventListener('click', fn);
+                    row.appendChild(b);
+                }
             });
 
-            // Export JS
-            const exportBtn = this._makeBtn('Export Events JS', false);
-            exportBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-top:4px;';
-            exportBtn.addEventListener('click', () => this._exportEventsJS());
-            p.appendChild(exportBtn);
+            const expBtn = this._makeBtn('Export Events JS', false);
+            expBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-top:4px;';
+            expBtn.addEventListener('click', () => this._exportEventsJS());
+            p.appendChild(expBtn);
         }
     },
 
-    // Render the editable lines inside the compose form
     _renderDraftLines(container) {
         container.innerHTML = '';
         const speakers = this._getSpeakers();
-
         this._draft.elements.forEach((line, i) => {
             const wrap = document.createElement('div');
             wrap.style.cssText = 'border:1px solid #204060;padding:4px;margin-bottom:3px;';
 
-            // Speaker dropdown
             const sel = document.createElement('select');
-            sel.style.cssText = `
-                display:block;width:100%;background:#080e18;border:1px solid #204060;
-                color:#40c0ff;font-family:'Courier New',monospace;font-size:11px;
-                padding:1px;margin-bottom:3px;
-            `;
+            sel.style.cssText = 'display:block;width:100%;background:#080e18;border:1px solid #204060;color:#40c0ff;font-family:\'Courier New\',monospace;font-size:11px;padding:1px;margin-bottom:3px;';
             for (const [key, name] of speakers) {
                 const opt = document.createElement('option');
-                opt.value = key;
-                opt.textContent = name;
+                opt.value = key; opt.textContent = name;
                 if (key === line.speakerKey) opt.selected = true;
                 sel.appendChild(opt);
             }
             sel.addEventListener('change', () => { line.speakerKey = sel.value; });
             wrap.appendChild(sel);
 
-            // Text input
             const txt = document.createElement('textarea');
             txt.value = line.text;
             txt.rows = 2;
-            txt.style.cssText = `
-                display:block;width:100%;background:#080e18;border:1px solid #204060;
-                color:#80e0ff;font-family:'Courier New',monospace;font-size:11px;
-                padding:2px;resize:vertical;box-sizing:border-box;
-            `;
+            txt.style.cssText = 'display:block;width:100%;background:#080e18;border:1px solid #204060;color:#80e0ff;font-family:\'Courier New\',monospace;font-size:11px;padding:2px;resize:vertical;box-sizing:border-box;';
             txt.addEventListener('input', () => { line.text = txt.value; });
             wrap.appendChild(txt);
 
-            // Remove line
-            const del = this._makeBtn('× remove line', false);
+            const del = this._makeBtn('× remove', false);
             del.style.cssText += ';margin-top:2px;font-size:10px;';
             del.addEventListener('click', () => {
                 this._draft.elements.splice(i, 1);
                 this._renderDraftLines(container);
             });
             wrap.appendChild(del);
-
             container.appendChild(wrap);
         });
     },
 
-    // ------------------------------------------------------------------ helpers
+    // ── TRIGGERS tab ──────────────────────────────────────────────────────────
+
+    _buildTriggersTab(p) {
+        this._label(p, 'STORY TRIGGER GLOBALS');
+
+        const gs = gameScene;
+        for (const def of _TRIGGER_DEFS) {
+            const val = window[def.name];
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:4px;margin-bottom:4px;';
+
+            const lbl = document.createElement('span');
+            lbl.style.cssText = 'flex:1;color:#305870;font-size:10px;';
+            lbl.textContent = def.label;
+            row.appendChild(lbl);
+
+            const valSpan = document.createElement('span');
+            const isSet = val !== def.reset && val !== null && val !== undefined && val !== false && val !== 0;
+            valSpan.textContent = (val === null || val === undefined) ? 'null'
+                : (typeof val === 'object' ? '(tile)' : String(val));
+            valSpan.style.cssText = `color:${isSet ? '#40ff80' : '#305870'};min-width:30px;text-align:right;font-size:10px;`;
+            row.appendChild(valSpan);
+
+            const resetBtn = this._makeBtn('↺', false);
+            resetBtn.title = `Reset to ${def.reset}`;
+            resetBtn.addEventListener('click', () => {
+                window[def.name] = def.reset;
+                this._rebuildPanel();
+            });
+            row.appendChild(resetBtn);
+            p.appendChild(row);
+        }
+
+        const resetAllBtn = this._makeBtn('Reset All Triggers', false);
+        resetAllBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-top:4px;margin-bottom:8px;';
+        resetAllBtn.addEventListener('click', () => {
+            for (const def of _TRIGGER_DEFS) window[def.name] = def.reset;
+            this._rebuildPanel();
+        });
+        p.appendChild(resetAllBtn);
+
+        // Checkpoint jumper
+        this._label(p, 'CHECKPOINT');
+        const cpNote = document.createElement('div');
+        cpNote.textContent = 'Ctrl+R to apply';
+        cpNote.style.cssText = 'color:#305870;font-size:10px;margin-bottom:3px;';
+        p.appendChild(cpNote);
+
+        const cpRow = this._row(p);
+        const curCp = gs ? gs._settings.checkpoint : 0;
+        for (let i = 0; i <= 6; i++) {
+            this._btn(cpRow, String(i), i === curCp, () => {
+                window._useCheckpoint = i;
+                if (gs) gs._settings.checkpoint = i;
+                this._rebuildPanel();
+            });
+        }
+
+        // Also reset event triggered flags when checkpoint jumps
+        const cpResetBtn = this._makeBtn('Reset Event Flags', false);
+        cpResetBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-top:4px;';
+        cpResetBtn.title = 'Marks all story events as un-triggered';
+        cpResetBtn.addEventListener('click', () => {
+            if (gs) gs.events.forEach(ev => ev.triggered = false);
+            this._rebuildPanel();
+        });
+        p.appendChild(cpResetBtn);
+    },
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     _getSpeakers() {
-        // Returns [[key, displayName], ...]
         const list = [];
         if (gameScene && gameScene.playerInfo) {
             gameScene.playerInfo.forEach((info, i) => {
                 if (info) list.push([`playerInfo_${i}`, `[${i}] ${info.rank} ${info.fName}`]);
             });
-            if (gameScene.extraPlayerInfo && gameScene.extraPlayerInfo[0]) {
+            if (gameScene.extraPlayerInfo && gameScene.extraPlayerInfo[0])
                 list.push(['extraPlayerInfo_0', '[HQ] HQ']);
-            }
         } else {
-            // Fallback before game starts
             for (let i = 0; i < 8; i++) list.push([`playerInfo_${i}`, `Player ${i}`]);
             list.push(['extraPlayerInfo_0', 'HQ']);
         }
@@ -414,8 +592,8 @@ const DebugMenu = {
 
     _evalCondition(condition, gs) {
         if (condition === 'manual') return false;
-        const floorMatch = condition.match(/^floor(\d)$/);
-        if (floorMatch) return gs.maps[parseInt(floorMatch[1])].playerCounter > 0;
+        const m = condition.match(/^floor(\d)$/);
+        if (m) return gs.maps[parseInt(m[1])].playerCounter > 0;
         return false;
     },
 
@@ -425,42 +603,34 @@ const DebugMenu = {
             .filter(e => e.text.trim() !== '')
             .map(e => ({ text: e.text, info: this._resolveSpeaker(e.speakerKey, gs) }))
             .filter(e => e.info);
-        if (elements.length > 0) gs.addStory({ elements });
+        if (elements.length) gs.addStory({ elements });
+    },
+
+    _saveCustomEvents() {
+        try {
+            localStorage.setItem('ghostTacticsDebugEvents', JSON.stringify(this._customEvents));
+        } catch(e) {}
     },
 
     _exportEventsJS() {
-        const gs = gameScene;
         const lines = ['// Custom events — paste into createEvents() in src/events.js\n'];
-        this._customEvents.forEach((ev, i) => {
+        this._customEvents.forEach(ev => {
             const condStr = ev.condition === 'manual'
-                ? 'false /* manual — replace with your condition */'
-                : `gs.maps[${ev.condition.replace('floor', '')}].playerCounter > 0`;
-            const elements = ev.elements
-                .filter(e => e.text.trim() !== '')
-                .map(e => {
-                    const [obj, idx] = e.speakerKey.split('_');
-                    return `            { text: ${JSON.stringify(e.text)}, info: gs.${obj}[${idx}] },`;
-                }).join('\n');
-            lines.push(`{
-    triggered: false,
-    condition(gs) { return ${condStr}; },
-    run(gs) {
-        gs.addStory({ elements: [
-${elements}
-        ]});
-    }
-},`);
+                ? 'false /* replace with your condition */'
+                : `gs.maps[${ev.condition.replace('floor','')}].playerCounter > 0`;
+            const els = ev.elements.filter(e => e.text.trim() !== '').map(e => {
+                const [obj, idx] = e.speakerKey.split('_');
+                return `            { text: ${JSON.stringify(e.text)}, info: gs.${obj}[${idx}] },`;
+            }).join('\n');
+            lines.push(`{\n    triggered: false,\n    condition(gs) { return ${condStr}; },\n    run(gs) {\n        gs.addStory({ elements: [\n${els}\n        ]});\n    }\n},`);
         });
         const blob = new Blob([lines.join('\n')], { type: 'text/javascript' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = 'custom_events.js';
-        a.click();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'custom_events.js'; a.click();
         URL.revokeObjectURL(url);
     },
 
-    // ------------------------------------------------------------------ MAP actions
+    // ── MAP actions ───────────────────────────────────────────────────────────
 
     _spawnAtCenter(isSuper) {
         if (!gameScene || gameScene.atTitleScreen) return;
@@ -473,31 +643,27 @@ ${elements}
 
     _killAllEnemies() {
         if (!gameScene) return;
-        for (const map of gameScene.maps) {
+        for (const map of gameScene.maps)
             for (const actor of [...map.enemyActors]) actor.kill(false);
-        }
     },
 
     _exportMap() {
         if (!gameScene) return;
         const data = gameScene.maps.map((map, i) => ({
-            floor: i + 1, width: map.width, height: map.height, tiles: map.tileGrid,
+            floor: i+1, width: map.width, height: map.height, tiles: map.tileGrid,
         }));
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = 'ghosttactics_map.json';
-        a.click();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'ghosttactics_map.json'; a.click();
         URL.revokeObjectURL(url);
     },
 
-    // ------------------------------------------------------------------ UI helpers
+    // ── UI helpers ────────────────────────────────────────────────────────────
 
     _label(parent, text) {
         const d = document.createElement('div');
         d.textContent = text;
-        d.style.cssText = 'color:#305870;margin-top:5px;margin-bottom:2px;';
+        d.style.cssText = 'color:#305870;margin-top:5px;margin-bottom:2px;font-size:10px;letter-spacing:0.05em;';
         parent.appendChild(d);
     },
 
@@ -518,15 +684,37 @@ ${elements}
     _makeBtn(text, active) {
         const b = document.createElement('button');
         b.textContent = text;
-        b.style.cssText = `
-            padding: 2px 6px;
-            background: ${active ? 'rgba(64,192,255,0.18)' : 'transparent'};
-            border: 1px solid ${active ? '#40c0ff' : '#204060'};
-            color: ${active ? '#80e0ff' : '#40c0ff'};
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            cursor: pointer;
-        `;
+        b.style.cssText = `padding:2px 6px;background:${active?'rgba(64,192,255,0.18)':'transparent'};border:1px solid ${active?'#40c0ff':'#204060'};color:${active?'#80e0ff':'#40c0ff'};font-family:'Courier New',monospace;font-size:11px;cursor:pointer;`;
         return b;
+    },
+
+    _makeSlider(parent, labelText, min, max, step, value, onChange, onReset) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin-bottom:5px;';
+
+        const lbl = document.createElement('div');
+        lbl.textContent = labelText;
+        lbl.style.cssText = 'color:#40c0ff;font-size:10px;margin-bottom:1px;';
+        wrap.appendChild(lbl);
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:4px;';
+
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = min; slider.max = max; slider.step = step; slider.value = value;
+        slider.style.cssText = 'flex:1;accent-color:#40c0ff;cursor:pointer;height:14px;';
+        slider.addEventListener('input', () => onChange(parseFloat(slider.value)));
+        row.appendChild(slider);
+
+        if (onReset) {
+            const rst = this._makeBtn('↺', false);
+            rst.title = 'Reset to default';
+            rst.addEventListener('click', () => { onReset(); this._rebuildPanel(); });
+            row.appendChild(rst);
+        }
+
+        wrap.appendChild(row);
+        parent.appendChild(wrap);
     },
 };
