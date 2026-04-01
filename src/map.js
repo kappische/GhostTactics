@@ -177,6 +177,7 @@ class GameMap {
         if (tileName && TILES[tileName]) {
             this.addTile(tileX, tileY, TILES[tileName], tileName);
         }
+        this._minimapDirty = true;
     }
 
     addObject(obj) {

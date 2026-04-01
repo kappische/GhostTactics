@@ -171,6 +171,7 @@ class GameScene extends Phaser.Scene {
 
         this.playMusicTrack('AtraMateria', 1, false);
         DebugMenu.init(this);
+        DebugOverlay.init(this);
     }
 
     createSeededRandom(seed) {
@@ -544,6 +545,7 @@ class GameScene extends Phaser.Scene {
 
         // Debug
         DebugMenu.update(this);
+        DebugOverlay.render(this);
     }
 
     updateStoryInfo(time) {

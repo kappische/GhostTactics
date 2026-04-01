@@ -32,6 +32,9 @@ const DebugMenu = {
     _draft:         { condition: 'manual', elements: [] },
     _customEvents:  [],
 
+    // Feature D: minimap cache
+    _minimapCache: null,   // WeakMap<map, OffscreenCanvas>
+
     // Actor inspector tooltip element
     _tooltip: null,
 
@@ -79,6 +82,10 @@ const DebugMenu = {
                 this._runCustomEvent(ev, gs);
                 this._saveCustomEvents();
             }
+        }
+        // Feature D: update minimap when panel is open
+        if (this.visible && (this.activeTab === 'map' || this.activeTab === 'visualize')) {
+            this._updateMinimap(gs);
         }
     },
 
@@ -208,16 +215,17 @@ const DebugMenu = {
 
         const tabRow = this._row(p);
         tabRow.style.marginBottom = '5px';
-        for (const [id, label] of [['map','MAP'],['events','EVENTS'],['triggers','TRIGGERS']]) {
+        for (const [id, label] of [['map','MAP'],['events','EVENTS'],['triggers','TRIGGERS'],['visualize','VIZ']]) {
             this._btn(tabRow, label, this.activeTab === id, () => {
                 this.activeTab = id;
                 this._rebuildPanel();
             });
         }
 
-        if      (this.activeTab === 'map')      this._buildMapTab(p);
-        else if (this.activeTab === 'events')   this._buildEventsTab(p);
-        else if (this.activeTab === 'triggers') this._buildTriggersTab(p);
+        if      (this.activeTab === 'map')       this._buildMapTab(p);
+        else if (this.activeTab === 'events')    this._buildEventsTab(p);
+        else if (this.activeTab === 'triggers')  this._buildTriggersTab(p);
+        else if (this.activeTab === 'visualize') this._buildVisualizeTab(p);
     },
 
     // ── MAP tab ───────────────────────────────────────────────────────────────
@@ -312,6 +320,19 @@ const DebugMenu = {
                 }
             );
         }
+
+        // Feature D: all-floors mini-map
+        this._label(p, 'ALL FLOORS  (2px/tile)');
+        const mmCanvas = document.createElement('canvas');
+        mmCanvas.id = 'dbg-minimap';
+        mmCanvas.width  = MAP_WIDTH * 2 * NUM_MAPS + (NUM_MAPS - 1);  // 5 floors side-by-side with 1px gap
+        mmCanvas.height = MAP_HEIGHT * 2;
+        Object.assign(mmCanvas.style, {
+            display: 'block', marginTop: '4px',
+            border: '1px solid #204060',
+            imageRendering: 'pixelated',
+        });
+        p.appendChild(mmCanvas);
     },
 
     // ── EVENTS tab ────────────────────────────────────────────────────────────
@@ -411,6 +432,20 @@ const DebugMenu = {
         });
         p.appendChild(addLineBtn);
 
+        // Feature E: live dialogue preview
+        this._label(p, 'PREVIEW');
+        const previewDiv = document.createElement('div');
+        previewDiv.id = 'dbg-dialogue-preview';
+        Object.assign(previewDiv.style, {
+            background: '#060d16', border: '1px solid #204060',
+            color: '#80e0ff', fontFamily: "'Courier New', monospace",
+            fontSize: '11px', padding: '5px 7px',
+            marginBottom: '5px', minHeight: '32px',
+            whiteSpace: 'pre-wrap', lineHeight: '1.5',
+        });
+        previewDiv.textContent = '(type dialogue above to preview)';
+        p.appendChild(previewDiv);
+
         const saveBtn = this._makeBtn('Save Event', false);
         saveBtn.style.cssText += ';display:block;width:100%;text-align:left;margin-bottom:4px;border-color:#40c0ff;';
         saveBtn.addEventListener('click', () => {
@@ -485,7 +520,10 @@ const DebugMenu = {
             txt.value = line.text;
             txt.rows = 2;
             txt.style.cssText = 'display:block;width:100%;background:#080e18;border:1px solid #204060;color:#80e0ff;font-family:\'Courier New\',monospace;font-size:11px;padding:2px;resize:vertical;box-sizing:border-box;';
-            txt.addEventListener('input', () => { line.text = txt.value; });
+            txt.addEventListener('input', () => {
+                line.text = txt.value;
+                DebugMenu._updateLivePreview();
+            });
             wrap.appendChild(txt);
 
             const del = this._makeBtn('× remove', false);
@@ -566,6 +604,113 @@ const DebugMenu = {
             this._rebuildPanel();
         });
         p.appendChild(cpResetBtn);
+    },
+
+    // ── VISUALIZE tab ─────────────────────────────────────────────────────────
+
+    _buildVisualizeTab(p) {
+        this._label(p, 'LOS + PATH OVERLAY');
+        const note = document.createElement('div');
+        note.textContent = 'Overlays are always visible when debug is open.\n· Red dotted = ghost A* path\n· Yellow = ghost→target\n· Green/Red = player LOS';
+        note.style.cssText = 'color:#305870;font-size:10px;white-space:pre-line;margin-bottom:6px;';
+        p.appendChild(note);
+
+        this._label(p, 'DRAG ACTORS');
+        const dragNote = document.createElement('div');
+        dragNote.textContent = 'Click & drag any actor while on this tab. AI re-routes on drop.';
+        dragNote.style.cssText = 'color:#305870;font-size:10px;margin-bottom:6px;';
+        p.appendChild(dragNote);
+
+        // Mini-map repeated here too for quick access
+        this._label(p, 'ALL FLOORS MINI-MAP');
+        const mmCanvas = document.createElement('canvas');
+        mmCanvas.id = 'dbg-minimap-viz';
+        mmCanvas.width  = MAP_WIDTH * 2 * NUM_MAPS + (NUM_MAPS - 1);
+        mmCanvas.height = MAP_HEIGHT * 2;
+        Object.assign(mmCanvas.style, {
+            display: 'block', marginTop: '4px',
+            border: '1px solid #204060',
+            imageRendering: 'pixelated',
+        });
+        p.appendChild(mmCanvas);
+    },
+
+    // Feature E: live preview of typed dialogue
+    _updateLivePreview() {
+        const el = document.getElementById('dbg-dialogue-preview');
+        if (!el) return;
+        const lines = this._draft.elements
+            .map(e => e.text.trim())
+            .filter(Boolean);
+        if (!lines.length) {
+            el.textContent = '(type dialogue above to preview)';
+            return;
+        }
+        el.textContent = lines.map(l => `▶ ${l}`).join('\n');
+    },
+
+    // Feature D: draw all-floors mini-map onto #dbg-minimap and #dbg-minimap-viz
+    _updateMinimap(gs) {
+        const ids = ['dbg-minimap', 'dbg-minimap-viz'];
+        for (const id of ids) {
+            const canvas = document.getElementById(id);
+            if (!canvas) continue;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+
+            const S = 2; // scale: pixels per tile
+            const W = MAP_WIDTH * S, H = MAP_HEIGHT * S;
+
+            // Initialise cache map once
+            if (!this._minimapCache) this._minimapCache = new WeakMap();
+
+            for (let fi = 0; fi < NUM_MAPS; fi++) {
+                const map = gs.maps[fi];
+                if (!map) continue;
+                const ox = fi * (W + 1); // x offset for this floor (1px gap)
+
+                // Rebuild wall cache if dirty
+                if (map._minimapDirty || !this._minimapCache.has(map)) {
+                    const offscreen = new OffscreenCanvas(W, H);
+                    const oc = offscreen.getContext('2d');
+                    oc.fillStyle = '#0a1520';
+                    oc.fillRect(0, 0, W, H);
+                    for (let tx = 0; tx < MAP_WIDTH; tx++) {
+                        for (let ty = 0; ty < MAP_HEIGHT; ty++) {
+                            const name = map.tileGrid && map.tileGrid[tx] ? map.tileGrid[tx][ty] : null;
+                            if (!name) continue;
+                            const tile = TILES[name];
+                            if (!tile) continue;
+                            oc.fillStyle = tile.isBlocking ? '#4a6080' : '#1a2a3a';
+                            if (name === 'spawn' || name === 'startTile') oc.fillStyle = '#204830';
+                            oc.fillRect(tx * S, ty * S, S, S);
+                        }
+                    }
+                    this._minimapCache.set(map, offscreen);
+                    map._minimapDirty = false;
+                }
+
+                // Blit wall cache
+                const offscreen = this._minimapCache.get(map);
+                if (offscreen) ctx.drawImage(offscreen, ox, 0);
+
+                // Draw actor dots
+                for (const actor of map.playerActors) {
+                    if (actor.isDead) continue;
+                    ctx.fillStyle = '#4488ff';
+                    const ax = Math.floor(actor.pos.x / TILE_SIZE) * S + ox;
+                    const ay = Math.floor(actor.pos.y / TILE_SIZE) * S;
+                    ctx.fillRect(ax, ay, S, S);
+                }
+                for (const actor of map.enemyActors) {
+                    if (actor.isDead) continue;
+                    ctx.fillStyle = '#ff4444';
+                    const ax = Math.floor(actor.pos.x / TILE_SIZE) * S + ox;
+                    const ay = Math.floor(actor.pos.y / TILE_SIZE) * S;
+                    ctx.fillRect(ax, ay, S, S);
+                }
+            }
+        }
     },
 
     // ── helpers ───────────────────────────────────────────────────────────────
