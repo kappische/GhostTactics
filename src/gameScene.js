@@ -44,6 +44,8 @@ class GameScene extends Phaser.Scene {
         this._settings = {
             masterVolume: 0.5,
             musicVolume: 0.8,
+            sfxVolume: 1.0,
+            voiceVolume: 1.0,
             textDelay: 40,
             checkpoint: 0,
             portraitSeed: 105014192,
@@ -170,6 +172,7 @@ class GameScene extends Phaser.Scene {
         this.chatText.setVisible(false);
 
         this.playMusicTrack('AtraMateria', 1, false);
+        OptionsMenu.init(this);
         DebugMenu.init(this);
         DebugOverlay.init(this);
     }
@@ -315,8 +318,10 @@ class GameScene extends Phaser.Scene {
     playGameSound(name) {
         const idx = Math.floor(Math.random() * 4) + 1;
         const key = name + idx;
+        const isVoice = (name === 'blip');
+        const cat = isVoice ? this._settings.voiceVolume : this._settings.sfxVolume;
         try {
-            this.sound.play(key, { volume: this._settings.masterVolume });
+            this.sound.play(key, { volume: this._settings.masterVolume * cat });
         } catch (e) { }
     }
 
@@ -443,6 +448,8 @@ class GameScene extends Phaser.Scene {
         } else if (event.keyCode === Phaser.Input.Keyboard.KeyCodes.R && this.keys.ctrl.isDown) {
             // Restart
             this.scene.restart();
+        } else if (event.keyCode === 27) { // Escape
+            OptionsMenu.toggle(this);
         } else if (event.keyCode === 192) { // backtick `
             DebugMenu.toggle();
         } else if (event.keyCode === 90 && event.ctrlKey) { // Ctrl+Z
@@ -462,9 +469,11 @@ class GameScene extends Phaser.Scene {
         }
         this.fpsCount++;
 
-        // Fixed timestep for physics/gameplay
+        // Fixed timestep for physics/gameplay — skip when options menu open
         const clampedTime = Math.min(time, 0.06);
-        this.strayTime += clampedTime;
+        if (!OptionsMenu.visible) {
+            this.strayTime += clampedTime;
+        }
         const dt = 0.015625; // 64 Hz
 
         while (this.strayTime >= dt) {
@@ -474,7 +483,7 @@ class GameScene extends Phaser.Scene {
 
         // Story/dialog updates once per frame (not per physics tick)
         // to ensure text is visible between advances
-        if (!this.atTitleScreen) {
+        if (!this.atTitleScreen && !OptionsMenu.visible) {
             this.updateStoryInfo(clampedTime);
         }
 
