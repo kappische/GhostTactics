@@ -450,7 +450,7 @@ class GameScene extends Phaser.Scene {
             this.scene.restart();
         } else if (event.keyCode === 27) { // Escape
             OptionsMenu.toggle(this);
-        } else if (event.keyCode === 192) { // backtick `
+        } else if (event.keyCode === 48) { // 0
             DebugMenu.toggle();
         } else if (event.keyCode === 90 && event.ctrlKey) { // Ctrl+Z
             DebugMenu._undo();

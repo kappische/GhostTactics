@@ -1,4 +1,4 @@
-// In-game debug menu — toggle with backtick (`)
+// In-game debug menu — toggle with 0
 // Tabs: MAP | EVENTS | TRIGGERS
 
 // All story-state globals (module-level lets are on window in non-module scripts)
@@ -209,7 +209,7 @@ const DebugMenu = {
         p.innerHTML = '';
 
         const hdr = document.createElement('div');
-        hdr.textContent = 'DEBUG  [` toggle]';
+        hdr.textContent = 'DEBUG  [0 toggle]';
         hdr.style.cssText = 'color:#80e0ff;border-bottom:1px solid #204060;padding-bottom:3px;margin-bottom:4px;';
         p.appendChild(hdr);
 
