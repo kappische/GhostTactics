@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <title>Ghost Tactics</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-        canvas { display: block; margin: 0 auto; image-rendering: auto; }
+        canvas { display: block; margin: 0 auto; image-rendering: auto; touch-action: none; }
     </style>
 </head>
 <body>
@@ -18,7 +18,7 @@
         const scripts = [
             'src/utils.js', 'src/collision.js', 'src/renderer.js', 'src/mapData.js',
             'src/tiles.js', 'src/objects.js', 'src/equipment.js', 'src/particles.js', 'src/actor.js',
-            'src/map.js', 'src/portrait.js', 'src/events.js', 'src/gameScene.js', 'src/optionsMenu.js', 'src/debugOverlay.js', 'src/debug.js', 'src/main.js'
+            'src/map.js', 'src/portrait.js', 'src/events.js', 'src/gameScene.js', 'src/optionsMenu.js', 'src/debugOverlay.js', 'src/debug.js', 'src/mobileControls.js', 'src/main.js'
         ];
         for (const s of scripts) {
             document.write('<script src="' + s + '?v=' + Date.now() + '"><\/script>');

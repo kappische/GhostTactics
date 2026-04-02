@@ -175,6 +175,7 @@ class GameScene extends Phaser.Scene {
         OptionsMenu.init(this);
         DebugMenu.init(this);
         DebugOverlay.init(this);
+        MobileControls.init();
     }
 
     createSeededRandom(seed) {
@@ -706,6 +707,9 @@ class GameScene extends Phaser.Scene {
             { text: 'ENTER - Use Stairs', x: GAME_WIDTH / 2, y: 624, size: 12, color: Theme.titleSub },
             { text: 'Shift+ENTER - Hustle! (At Stairs)', x: GAME_WIDTH / 2, y: 640, size: 12, color: Theme.titleSub },
             { text: 'Ctrl+R - Restart', x: GAME_WIDTH / 2, y: 670, size: 12, color: Theme.titleSub },
+            ...(MobileControls.enabled ? [
+                { text: 'Mobile: tap anywhere to start · use on-screen controls', x: GAME_WIDTH / 2, y: 700, size: 11, color: Theme.titleSub },
+            ] : []),
         ];
 
         for (const line of lines) {
