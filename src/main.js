@@ -5,14 +5,14 @@ const config = {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#050a14',
-    parent: document.body,
+    parent: MobileControls.isPortrait ? 'mc-game-wrap' : document.body,
     scene: [GameScene],
     audio: {
         disableWebAudio: false,
     },
     scale: {
         mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
+        autoCenter: MobileControls.isPortrait ? Phaser.Scale.NO_CENTER : Phaser.Scale.CENTER_BOTH,
     },
     render: {
         antialias: true,

@@ -1,10 +1,10 @@
 // Main GameScene - ported from gameState.lua
 // This is the primary Phaser scene that manages all gameplay
 
-const GAME_WIDTH = 1280;
-const GAME_HEIGHT = 768;
-const HUD_WIDTH = 200;
-const HUD_CHAT_HEIGHT = 150;
+let GAME_WIDTH = 1280;
+let GAME_HEIGHT = 768;
+let HUD_WIDTH = 200;
+let HUD_CHAT_HEIGHT = 150;
 const NUM_MAPS = 5;
 const MAP_WIDTH = 48;
 const MAP_HEIGHT = 32;
@@ -650,8 +650,9 @@ class GameScene extends Phaser.Scene {
             this.textObjects.push(txt);
         }
 
-        // Render HUD
-        this.renderHUD();
+        // Render HUD (desktop only — mobile uses HTML strip)
+        if (!MobileControls.isPortrait) this.renderHUD();
+        else MobileControls.updateHUD(this);
 
         // Render chat
         if (this.chatVisible > 0) {
