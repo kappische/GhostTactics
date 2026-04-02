@@ -870,7 +870,9 @@ class GameScene extends Phaser.Scene {
                 PortraitRenderer.render(g, left + 2, top + 2, left + portraitWidth + 2, bottom - 2, this.chatPortrait, 255);
             }
 
-            this.chatText.setPosition(left + portraitWidth + 10, top + 5);
+            const textX = left + portraitWidth + 10;
+            this.chatText.setPosition(textX, top + 5);
+            this.chatText.setWordWrapWidth(right - textX - 6);
         }
     }
 }

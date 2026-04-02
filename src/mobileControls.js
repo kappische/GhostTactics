@@ -222,13 +222,20 @@ const MobileControls = {
             font-family:'Courier New',monospace;
         `;
 
-        // Tap to select unit
+        // Tap to select unit — passive so horizontal scroll still works;
+        // only fire if finger didn't move much (tap, not scroll)
+        let _tapStartX = 0, _tapStartY = 0;
         el.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            if (typeof gameScene !== 'undefined' && gameScene) {
+            _tapStartX = e.touches[0].clientX;
+            _tapStartY = e.touches[0].clientY;
+        }, { passive: true });
+        el.addEventListener('touchend', (e) => {
+            const dx = Math.abs(e.changedTouches[0].clientX - _tapStartX);
+            const dy = Math.abs(e.changedTouches[0].clientY - _tapStartY);
+            if (dx < 10 && dy < 10 && typeof gameScene !== 'undefined' && gameScene) {
                 gameScene.selectPlayerActor(idx);
             }
-        }, { passive: false });
+        }, { passive: true });
 
         // Top row: portrait + name/rank
         const topRow = document.createElement('div');
