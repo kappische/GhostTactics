@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#050a14;
+  display:flex; flex-direction:column; align-items:center;
+  min-height:100vh; font-family:'Courier New',monospace; padding:24px; gap:32px;
+}
+
+/* ── Phone frame ── */
+.phone {
+  width:390px; height:844px;
+  background:#050a14;
+  border:3px solid #1e3a5a;
+  border-radius:40px;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow: 0 0 60px rgba(64,192,255,0.12);
+}
+.game-world {
+  flex:1; background:#030810; position:relative; overflow:hidden;
+  border-bottom:1px solid #1a3050;
+}
+.scanlines {
+  position:absolute; inset:0; pointer-events:none;
+  background: repeating-linear-gradient(to bottom,
+    transparent 0px, transparent 3px, rgba(0,0,0,0.14) 3px, rgba(0,0,0,0.14) 4px);
+}
+
+/* ── HUD strip ── */
+.hud-strip {
+  height:128px;
+  background:#030810;
+  border-top:1px solid rgba(64,160,192,0.3);
+  display:flex; align-items:center;
+  padding:6px 8px; gap:6px;
+  overflow-x:auto; overflow-y:hidden;
+}
+.hud-strip::-webkit-scrollbar { display:none; }
+
+/* ── Card ── */
+.card {
+  flex-shrink:0;
+  width:88px; height:114px;
+  position:relative;
+  border-radius:6px;
+  overflow:hidden;
+  background:#040c18;
+  border:1px solid rgba(40,100,160,0.35);
+  cursor:pointer;
+}
+.card.active {
+  border-color:rgba(128,200,255,0.75);
+  box-shadow: 0 0 10px rgba(64,160,220,0.25) inset;
+}
+.card.dead { opacity:0.38; filter:grayscale(0.5); }
+
+/* canvas inside card — fills it */
+.card canvas {
+  position:absolute; inset:0; width:100%; height:100%;
+}
+
+/* text overlays */
+.card-index {
+  position:absolute; top:5px; left:6px;
+  font-size:11px; font-weight:bold; color:#b0d8f8;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
+  z-index:2; line-height:1;
+}
+.card-hp {
+  position:absolute; top:5px; right:6px;
+  font-size:10px; font-weight:bold;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
+  z-index:2; line-height:1;
+  text-align:right;
+}
+.card-name-block {
+  position:absolute; bottom:0; left:0; right:0;
+  padding:16px 4px 5px;
+  background:linear-gradient(transparent, rgba(3,8,18,0.96) 35%);
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+  z-index:2;
+}
+.card-name {
+  font-size:10px; font-weight:bold; color:#c8e8ff;
+  text-shadow: 0 1px 5px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.9);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:80px; text-align:center; line-height:1.2;
+}
+.card-title {
+  font-size:7.5px; color:rgba(80,160,200,0.75);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:80px; text-align:center; line-height:1.2;
+}
+
+/* ── Controls ── */
+.controls-bar {
+  height:175px; background:#030810;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 18px 18px; gap:10px;
+  border-top:1px solid rgba(64,192,255,0.08);
+}
+.joystick-zone {
+  width:148px; height:148px; flex-shrink:0;
+  border-radius:50%; border:2px solid rgba(64,192,255,0.25);
+  background:rgba(64,192,255,0.025); position:relative;
+}
+.joystick-thumb {
+  position:absolute; width:42px; height:42px; border-radius:50%;
+  border:1px solid rgba(64,192,255,0.45); background:rgba(64,192,255,0.12);
+  top:50%; left:50%; transform:translate(-50%,-50%);
+}
+.j-arrow { position:absolute; font-size:13px; color:rgba(64,192,255,0.38); }
+.action-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.act-btn {
+  width:68px; height:68px;
+  border:1px solid rgba(64,192,255,0.25); border-radius:10px;
+  background:rgba(64,192,255,0.045);
+  display:flex; align-items:center; justify-content:center;
+  flex-direction:column; font-size:10px; color:#40c0ff;
+  text-align:center; line-height:1.3; gap:2px;
+}
+.act-btn .icon { font-size:17px; }
+
+/* ── Zoom panel ── */
+.zoom-panel {
+  display:flex; gap:12px; flex-wrap:wrap; justify-content:center; padding:4px;
+}
+.zoom-panel .card { width:120px; height:156px; }
+.zoom-panel .card-index { font-size:15px; top:7px; left:8px; }
+.zoom-panel .card-hp { font-size:14px; top:7px; right:8px; }
+.zoom-panel .card-name { font-size:14px; }
+.zoom-panel .card-title { font-size:10px; }
+.zoom-panel .card-name-block { padding: 22px 6px 7px; }
+
+.section-label {
+  font-size:9px; letter-spacing:2px; color:rgba(64,160,192,0.4);
+  text-align:center;
+}
+</style>
+</head>
+<body>
+
+<!-- ZOOMED CARDS (easier to inspect) -->
+<div class="section-label">ZOOMED PREVIEW</div>
+<div class="zoom-panel" id="zoom"></div>
+
+<!-- PHONE FRAME -->
+<div class="section-label">IN-GAME LAYOUT</div>
+<div class="phone">
+  <div class="game-world">
+    <div class="scanlines"></div>
+    <svg width="390" height="100%" style="position:absolute;inset:0;">
+      <rect width="390" height="100%" fill="#030810"/>
+      <rect x="0" y="0" width="390" height="28" fill="#1a3a6a" opacity=".8"/>
+      <rect x="0" y="0" width="28" height="490" fill="#1a3a6a" opacity=".8"/>
+      <rect x="362" y="0" width="28" height="490" fill="#1a3a6a" opacity=".8"/>
+      <rect x="80" y="80" width="80" height="18" fill="#1a3a6a" opacity=".75"/>
+      <rect x="200" y="80" width="100" height="18" fill="#1a3a6a" opacity=".75"/>
+      <rect x="80" y="80" width="18" height="110" fill="#1a3a6a" opacity=".75"/>
+      <rect x="240" y="98" width="18" height="80" fill="#1a3a6a" opacity=".75"/>
+      <rect x="80" y="278" width="140" height="18" fill="#1a3a6a" opacity=".75"/>
+      <g stroke="rgba(40,80,140,0.15)" stroke-width="0.5">
+        <line x1="28" y1="28" x2="28" y2="460"/>
+        <line x1="60" y1="28" x2="60" y2="460"/>
+        <line x1="92" y1="28" x2="92" y2="460"/>
+        <line x1="124" y1="28" x2="124" y2="460"/>
+        <line x1="156" y1="28" x2="156" y2="460"/>
+        <line x1="188" y1="28" x2="188" y2="460"/>
+        <line x1="220" y1="28" x2="220" y2="460"/>
+        <line x1="252" y1="28" x2="252" y2="460"/>
+        <line x1="284" y1="28" x2="284" y2="460"/>
+        <line x1="316" y1="28" x2="316" y2="460"/>
+        <line x1="28" y1="60" x2="362" y2="60"/>
+        <line x1="28" y1="92" x2="362" y2="92"/>
+        <line x1="28" y1="124" x2="362" y2="124"/>
+        <line x1="28" y1="156" x2="362" y2="156"/>
+        <line x1="28" y1="188" x2="362" y2="188"/>
+        <line x1="28" y1="220" x2="362" y2="220"/>
+        <line x1="28" y1="252" x2="362" y2="252"/>
+      </g>
+      <circle cx="195" cy="240" r="9" fill="rgba(128,224,255,0.22)" stroke="#80e0ff" stroke-width="2.5"/>
+      <line x1="195" y1="240" x2="218" y2="217" stroke="#80e0ff" stroke-width="1.5"/>
+      <text x="191" y="243" font-size="8" fill="#80e0ff" font-family="Courier New">1</text>
+      <circle cx="158" cy="262" r="7" fill="rgba(64,192,255,0.1)" stroke="#40c0ff" stroke-width="1.5"/>
+      <circle cx="312" cy="158" r="8" fill="rgba(255,64,64,0.15)" stroke="#ff4040" stroke-width="1.5"/>
+    </svg>
+  </div>
+  <div class="hud-strip" id="strip"></div>
+  <div class="controls-bar">
+    <div class="joystick-zone">
+      <div class="j-arrow" style="top:8px;left:50%;transform:translateX(-50%)">▲</div>
+      <div class="j-arrow" style="bottom:8px;left:50%;transform:translateX(-50%)">▼</div>
+      <div class="j-arrow" style="left:8px;top:50%;transform:translateY(-50%)">◀</div>
+      <div class="j-arrow" style="right:8px;top:50%;transform:translateY(-50%)">▶</div>
+      <div class="joystick-thumb"></div>
+    </div>
+    <div class="action-grid">
+      <div class="act-btn"><div class="icon">⇥</div>NEXT<br>UNIT</div>
+      <div class="act-btn"><div class="icon">↵</div>STAIRS</div>
+      <div class="act-btn"><div class="icon">👣</div>WALK</div>
+      <div class="act-btn"><div class="icon">⚡</div>HUSTLE</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Portrait renderer (ported from portrait.js) ──────────────────────────────
+function renderPortrait(canvas, pInfo, alpha) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W * 0.5;
+  const cy = H * 0.46; // slightly above center — more face, less chin
+
+  const a = (alpha === undefined ? 1 : alpha / 255);
+  const headProportions = pInfo.headRatio;
+  let fWidth  = (H * 0.72) / headProportions;
+  let fHeight = H * 0.72;
+  if (fWidth > W * 0.88) {
+    fWidth  = W * 0.88;
+    fHeight = W * 0.88 * headProportions;
+  }
+
+  const sign = x => x >= 0 ? 1 : -1;
+  const cheekFn = angle => {
+    const x = Math.cos(angle), y = Math.sin(angle);
+    if (y > 0) {
+      return {
+        x: (x + Math.sin(y*Math.PI)*sign(x)*-pInfo.cheekStrength + Math.sin(y*Math.PI*-2)*-pInfo.cheekWaveStrength*sign(x)) * fWidth*0.5,
+        y: y * fHeight*0.5
+      };
+    }
+    return { x: x*fWidth*0.5, y: y*fHeight*0.5 };
+  };
+
+  ctx.strokeStyle = `rgba(64,160,192,${a})`;
+  ctx.lineWidth = 1;
+  ctx.shadowColor = `rgba(40,120,160,${a*0.5})`;
+  ctx.shadowBlur = 2;
+
+  const L = (x1,y1,x2,y2) => {
+    ctx.beginPath();
+    ctx.moveTo(cx+x1, cy+y1);
+    ctx.lineTo(cx+x2, cy+y2);
+    ctx.stroke();
+  };
+
+  // ── Eyes ──
+  const eyeOff = fWidth*0.2*pInfo.eyeSpacing;
+  const eyeW   = fWidth*0.2*pInfo.eyeWidth;
+  const eyeH   = eyeW*0.33*pInfo.eyeHeight;
+  const N = 18; // fewer segments for small canvas
+
+  if (pInfo.eyeStyle < 0) {
+    for (let i=0;i<N;i++) {
+      const a1=i*Math.PI*2/N, a2=(i+1)*Math.PI*2/N;
+      L( eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeH*.5,  eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeH*.5);
+      L(-eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeH*.5, -eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeH*.5);
+    }
+  } else if (pInfo.eyeStyle === 0) {
+    const iW = eyeW*0.8;
+    for (let i=0;i<N;i++) {
+      const a1=i*Math.PI*2/N, a2=(i+1)*Math.PI*2/N;
+      L( eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeW*.5,  eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeW*.5);
+      L(-eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeW*.5, -eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeW*.5);
+      L( eyeOff+Math.cos(a1)*iW*.5, Math.sin(a1)*iW*.5,  eyeOff+Math.cos(a2)*iW*.5, Math.sin(a2)*iW*.5);
+      L(-eyeOff+Math.cos(a1)*iW*.5, Math.sin(a1)*iW*.5, -eyeOff+Math.cos(a2)*iW*.5, Math.sin(a2)*iW*.5);
+    }
+  } else {
+    // square eyes
+    const pts=[[eyeW*.5,eyeH*.5],[-eyeW*.5,eyeH*.5],[-eyeW*.5,-eyeH*.5],[eyeW*.5,-eyeH*.5]];
+    for (let i=0;i<4;i++) {
+      const [sx,sy]=pts[i],[ex,ey]=pts[(i+1)%4];
+      L( eyeOff+sx, sy,  eyeOff+ex, ey);
+      L(-eyeOff+sx, sy, -eyeOff+ex, ey);
+    }
+  }
+
+  // ── Mouth ──
+  const mP  = fHeight*0.3*pInfo.mouthOffset;
+  const mM  = mP - mP*pInfo.mouthPout;
+  const mW  = fWidth*0.1*pInfo.mouthWidth;
+  L(-mW, mP, 0, mM);
+  L( mW, mP, 0, mM);
+
+  // ── Nose ──
+  const nH   = mP*0.75*pInfo.noseHeight;
+  const nSW  = (eyeOff - eyeW*0.5)*0.4*pInfo.noseWidth;
+  const nEW  = nSW*1.8;
+  L(-nSW, 0, -nEW, nH);
+  L( nSW, 0,  nEW, nH);
+
+  // Nostrils
+  const nostW=nSW, nostH=nSW*1.2;
+  for (let i=0;i<6;i++) {
+    const a1=Math.PI*-0.4+i*Math.PI*0.8/6, a2=Math.PI*-0.4+(i+1)*Math.PI*0.8/6;
+    L( nEW+Math.cos(a1)*nostW, nH+Math.sin(a1)*nostH,  nEW+Math.cos(a2)*nostW, nH+Math.sin(a2)*nostH);
+    L(-nEW-Math.cos(a1)*nostW, nH+Math.sin(a1)*nostH, -nEW-Math.cos(a2)*nostW, nH+Math.sin(a2)*nostH);
+  }
+
+  // ── Head ──
+  for (let i=0;i<32;i++) {
+    const a1=i*Math.PI*2/32, a2=(i+1)*Math.PI*2/32;
+    const p1=cheekFn(a1), p2=cheekFn(a2);
+    L(p1.x, p1.y, p2.x, p2.y);
+  }
+
+  // ── Hair ──
+  if (pInfo.hairStyle === 0) {
+    for (let i=0;i<=14;i++) {
+      const angle=i*Math.PI*-1/15;
+      const p=cheekFn(angle);
+      L(p.x, p.y, Math.cos(angle)*fWidth*.5, Math.sin(angle)*fHeight*.2);
+    }
+  } else if (pInfo.hairStyle === 1) {
+    for (let i=0;i<=14;i++) {
+      const angle=i*Math.PI*-1/15;
+      const p=cheekFn(angle);
+      let ya=angle+Math.PI*0.25;
+      if (ya>0) ya-=Math.PI;
+      L(p.x, p.y, Math.cos(angle)*fWidth*.5, Math.max(p.y, Math.sin(ya)*fHeight*.2));
+    }
+  } else if (pInfo.hairStyle === 2) {
+    for (let i=0;i<=14;i++) {
+      const angle=i*Math.PI*-1/15;
+      const p=cheekFn(angle);
+      const newY=fHeight*-0.5+Math.sin(angle+Math.PI)*fHeight*0.2;
+      L(p.x, Math.max(p.y,newY), Math.cos(angle)*fWidth*.5, Math.sin(angle)*fHeight*.2);
+    }
+  }
+  // hairStyle < 0 = no hair (bald)
+
+  // ── Beard ──
+  if (pInfo.beardStyle === 0) {
+    for (let i=0;i<=14;i++) {
+      const angle=i*Math.PI/15;
+      const p=cheekFn(angle);
+      L(p.x, p.y, Math.cos(angle)*fWidth*.5, Math.sin(angle)*nH*1.3);
+    }
+  } else if (pInfo.beardStyle === 1) {
+    for (let i=0;i<=14;i++) {
+      const angle=i*Math.PI/15;
+      const p=cheekFn(angle);
+      let tx=Math.cos(angle)*fWidth*.5;
+      const ty=Math.sin(angle)*fHeight*.4;
+      if (p.x<0) tx=Math.max(p.x,tx); else tx=Math.min(p.x,tx);
+      L(p.x, p.y, tx, Math.min(p.y, ty));
+    }
+  }
+}
+
+// ── seeded random ──────────────────────────────────────────────────────────
+function seededRng(seed) {
+  let s = seed;
+  return () => { s = (s*1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
+}
+
+function makePortrait(seed) {
+  const rng = seededRng(seed);
+  const p = {
+    headRatio:        1.2 + rng()*0.2,
+    cheekStrength:    0.05 + rng()*0.15,
+    eyeSpacing:       0.9 + rng()*0.3,
+    eyeWidth:         0.9 + rng()*0.4,
+    eyeHeight:        0.9 + rng()*0.4,
+    mouthOffset:      0.8 + rng()*0.4,
+    mouthWidth:       0.8 + rng()*0.8,
+    mouthPout:        rng()*0.1,
+    noseWidth:        1 - rng()*0.2,
+    noseHeight:       1 - rng()*0.4,
+    hairStyle:        Math.floor(rng()*9) - 6,
+    beardStyle:       Math.floor(rng()*6) - 4,
+    eyeStyle:         Math.floor(rng()*8) - 6,
+  };
+  p.cheekWaveStrength = p.cheekStrength*0.1 + rng()*0.5*p.cheekStrength;
+  return p;
+}
+
+// ── HP color ────────────────────────────────────────────────────────────────
+function hpColor(pct) {
+  if (pct <= 0)  return 'rgba(100,60,60,0.7)';
+  if (pct < 30)  return '#ff5555';
+  if (pct < 60)  return '#d4a020';
+  return '#40c0a0';
+}
+
+// ── Build a card element ─────────────────────────────────────────────────────
+function buildCard(data, isActive, isDead, w, h) {
+  const card = document.createElement('div');
+  card.className = 'card' + (isActive?' active':'') + (isDead?' dead':'');
+
+  // canvas portrait
+  const cvs = document.createElement('canvas');
+  cvs.width = w; cvs.height = h;
+  renderPortrait(cvs, data.portrait);
+  card.appendChild(cvs);
+
+  // index
+  const idx = document.createElement('div');
+  idx.className = 'card-index';
+  idx.textContent = data.index;
+  card.appendChild(idx);
+
+  // hp
+  const hp = document.createElement('div');
+  hp.className = 'card-hp';
+  const pct = isDead ? 0 : data.hpPct;
+  hp.textContent = pct + '%';
+  hp.style.color = hpColor(pct);
+  card.appendChild(hp);
+
+  // name + title
+  const nb = document.createElement('div');
+  nb.className = 'card-name-block';
+  nb.innerHTML = `<div class="card-name">${data.name}</div><div class="card-title">${data.rank}</div>`;
+  card.appendChild(nb);
+
+  return card;
+}
+
+// ── Squad data ───────────────────────────────────────────────────────────────
+const squad = [
+  { index:1, name:'James',   rank:'Captain',      hpPct:85,  seed:1001, active:true,  dead:false },
+  { index:2, name:'Hans',    rank:'Private',      hpPct:58,  seed:1337, active:false, dead:false },
+  { index:3, name:'Charles', rank:'Private',      hpPct:100, seed:2048, active:false, dead:false },
+  { index:4, name:'John',    rank:'Ofc. Cadet',   hpPct:18,  seed:7777, active:false, dead:false },
+  { index:5, name:'Edward',  rank:'Lieutenant',   hpPct:0,   seed:4242, active:false, dead:true  },
+  { index:6, name:'Maria',   rank:'Medic',        hpPct:72,  seed:9999, active:false, dead:false },
+  { index:7, name:'Diaz',    rank:'Sergeant',     hpPct:45,  seed:3141, active:false, dead:false },
+  { index:8, name:'Yuki',    rank:'Private',      hpPct:90,  seed:5050, active:false, dead:false },
+];
+
+squad.forEach(s => s.portrait = makePortrait(s.seed));
+
+// Populate strip (small)
+const strip = document.getElementById('strip');
+squad.forEach(s => {
+  strip.appendChild(buildCard(s, s.active, s.dead, 88, 114));
+});
+
+// Populate zoom panel (larger)
+const zoom = document.getElementById('zoom');
+squad.slice(0,5).forEach(s => {
+  zoom.appendChild(buildCard(s, s.active, s.dead, 120, 156));
+});
+</script>
+</body>
+</html>
