@@ -195,6 +195,7 @@ const MobileControls = {
             z-index:9998;
             -webkit-overflow-scrolling:touch;
             scrollbar-width:none;
+            user-select:none;-webkit-user-select:none;
         `;
         strip.style.cssText += '::-webkit-scrollbar{display:none}';
 
@@ -216,7 +217,8 @@ const MobileControls = {
             background:#040c18;
             border:1px solid rgba(40,100,160,0.35);
             cursor:pointer;
-            touch-action:manipulation;
+            touch-action:pan-x;
+            user-select:none; -webkit-user-select:none;
         `;
 
         // Tap to select — passive so horizontal scroll still works
@@ -235,7 +237,7 @@ const MobileControls = {
 
         // Portrait canvas — fills the full card
         const canvas = document.createElement('canvas');
-        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
         el.appendChild(canvas);
 
         // Index — top left
@@ -269,6 +271,7 @@ const MobileControls = {
             background:linear-gradient(transparent,rgba(3,8,18,0.72) 40%);
             display:flex;flex-direction:column;align-items:center;gap:1px;
             pointer-events:none;
+            user-select:none;-webkit-user-select:none;
         `;
         const nameEl = document.createElement('div');
         nameEl.style.cssText = `
