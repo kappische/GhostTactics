@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#1a1a2e;
+  display:flex; flex-direction:column; align-items:center;
+  min-height:100vh; font-family:'Courier New',monospace; padding:20px; gap:24px;
+}
+h2 { color:rgba(64,192,255,0.6); font-size:12px; letter-spacing:2px; margin-top:8px; }
+
+/* ────── PHONE FRAME ────── */
+.phone {
+  width:390px; height:844px;
+  background:#050a14;
+  border:3px solid #304060;
+  border-radius:40px;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow: 0 0 60px rgba(64,192,255,0.15);
+}
+
+.game-world {
+  flex:1; background:#030810; position:relative; overflow:hidden;
+  border-bottom:1px solid #1a3050;
+}
+.scanlines {
+  position:absolute; inset:0; pointer-events:none; z-index:10;
+  background: repeating-linear-gradient(to bottom,
+    transparent 0px, transparent 3px,
+    rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px);
+}
+
+/* ────── HUD STRIP ────── */
+.hud-strip {
+  height:128px;
+  background:linear-gradient(180deg, #06101e 0%, #050a14 100%);
+  border-top:1px solid rgba(64,192,255,0.3);
+  border-bottom:1px solid rgba(32,80,128,0.4);
+  display:flex; align-items:center;
+  padding:6px 8px; gap:6px;
+  overflow-x:auto; overflow-y:hidden;
+}
+.hud-strip::-webkit-scrollbar { display:none; }
+
+/* ────── HS-STYLE CARD ────── */
+.card {
+  flex-shrink:0;
+  width:84px; height:114px;
+  position:relative;
+  cursor:pointer;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+  transition: transform 0.1s;
+}
+.card:active { transform: scale(0.95); }
+.card.active .card-frame { border-color: #ffd700; box-shadow: 0 0 10px rgba(255,215,0,0.4), 0 0 20px rgba(255,215,0,0.15); }
+.card.dead { opacity: 0.4; filter: grayscale(0.7) drop-shadow(0 2px 4px rgba(0,0,0,0.6)); }
+
+/* Card frame — ornate border */
+.card-frame {
+  position:absolute; inset:0;
+  border-radius:8px 8px 6px 6px;
+  border:2px solid rgba(64,140,200,0.5);
+  background:linear-gradient(180deg, #0a1828 0%, #071020 100%);
+  overflow:hidden;
+}
+
+/* Art area — takes most of card */
+.art {
+  position:absolute; top:0; left:0; right:0;
+  height:80px;
+  background:linear-gradient(160deg, #0d2040 0%, #071828 60%, #030d18 100%);
+  overflow:hidden;
+}
+
+/* CSS face — centered, larger than before */
+.face {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  padding-bottom:8px; /* push up slightly so name banner overlaps */
+}
+.face-head {
+  width:38px; height:46px;
+  border-radius:50% 50% 40% 40%;
+  background:rgba(64,192,255,0.15);
+  border:1.5px solid rgba(64,192,255,0.35);
+  position:relative;
+  flex-shrink:0;
+}
+.face-eyes {
+  position:absolute; top:14px; left:4px; right:4px;
+  display:flex; justify-content:space-between;
+}
+.face-eye {
+  width:8px; height:5px; border-radius:50%;
+  background:rgba(64,220,255,0.6);
+  box-shadow: 0 0 4px rgba(64,220,255,0.4);
+}
+.face-mouth {
+  position:absolute; bottom:9px; left:50%; transform:translateX(-50%);
+  width:12px; height:3px; border-radius:50%;
+  background:rgba(64,192,255,0.25);
+}
+
+/* hair variants */
+.hair-a .face-head::after { content:''; position:absolute; top:-5px; left:2px; right:2px;
+  height:9px; background:rgba(80,200,255,0.2); border-radius:50% 50% 0 0; }
+.hair-b .face-head::after { content:''; position:absolute; top:-3px; left:-3px; right:-3px;
+  height:7px; background:rgba(64,180,255,0.18); border-radius:50% 50% 0 0; }
+.hair-c .face-head::before { content:''; position:absolute; top:-2px; right:0px;
+  width:14px; height:7px; background:rgba(64,200,255,0.18); border-radius:4px; }
+.hair-d .face-head::after { content:''; position:absolute; top:-6px; left:0; right:0;
+  height:12px; background:rgba(64,192,255,0.14); border-radius:40% 40% 0 0; }
+.beard .face-head { border-bottom:3px solid rgba(80,192,255,0.22); }
+
+/* Art vignette */
+.art::after {
+  content:'';
+  position:absolute; inset:0;
+  background: radial-gradient(ellipse at center 40%, transparent 35%, rgba(3,10,25,0.5) 100%);
+}
+
+/* ── Name banner (HS ribbon) ── */
+.name-banner {
+  position:absolute;
+  bottom:34px; left:-4px; right:-4px;
+  height:20px;
+  background:linear-gradient(90deg,
+    transparent 0%,
+    rgba(8,20,42,0.95) 8%,
+    rgba(10,24,50,0.98) 50%,
+    rgba(8,20,42,0.95) 92%,
+    transparent 100%);
+  border-top:1px solid rgba(64,140,200,0.4);
+  border-bottom:1px solid rgba(64,140,200,0.4);
+  display:flex; align-items:center; justify-content:center;
+  z-index:5;
+}
+.name-text {
+  font-size:9px; font-weight:bold;
+  color:#c8e8ff;
+  letter-spacing:0.3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:72px; text-align:center;
+  text-shadow: 0 0 6px rgba(64,192,255,0.5);
+}
+
+/* ── Bottom strip ── */
+.card-bottom {
+  position:absolute; bottom:0; left:0; right:0; height:34px;
+  background:linear-gradient(180deg, #060f1e 0%, #040c18 100%);
+  border-top:1px solid rgba(40,100,160,0.3);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 6px 0 28px; /* leave room for health gem */
+}
+.rank-txt {
+  font-size:7.5px; color:rgba(80,140,180,0.7);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:38px;
+}
+.kills-txt {
+  font-size:7.5px; color:rgba(80,140,180,0.55);
+}
+
+/* ── Index gem (top-left, like mana cost) ── */
+.index-gem {
+  position:absolute; top:-4px; left:-4px;
+  width:20px; height:20px; z-index:10;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, #3080c0, #0a2040);
+  border:1.5px solid rgba(80,160,220,0.7);
+  box-shadow: 0 0 6px rgba(40,120,200,0.4), inset 0 1px 2px rgba(255,255,255,0.15);
+  font-size:10px; font-weight:bold; color:#b0d8f8;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+/* ── Health gem (bottom-right, like HS health) ── */
+.health-gem {
+  position:absolute; bottom:-5px; right:-5px;
+  width:28px; height:28px; z-index:10;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%;
+  border:2px solid rgba(255,80,80,0.7);
+  box-shadow: 0 0 8px rgba(200,40,40,0.4), inset 0 1px 3px rgba(255,255,255,0.12);
+  font-size:11px; font-weight:bold;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+}
+/* color variants */
+.hp-ok  { background:radial-gradient(circle at 35% 35%, #408060, #102010); color:#80ffb0; border-color:rgba(80,200,120,0.7); box-shadow:0 0 8px rgba(40,180,80,0.35), inset 0 1px 3px rgba(255,255,255,0.1); }
+.hp-mid { background:radial-gradient(circle at 35% 35%, #806020, #201000); color:#ffd060; border-color:rgba(200,160,40,0.7); box-shadow:0 0 8px rgba(200,140,20,0.35), inset 0 1px 3px rgba(255,255,255,0.1); }
+.hp-low { background:radial-gradient(circle at 35% 35%, #802020, #200a0a); color:#ff8080; border-color:rgba(220,60,60,0.7); box-shadow:0 0 8px rgba(200,40,40,0.4), inset 0 1px 3px rgba(255,255,255,0.1); }
+.hp-dead{ background:radial-gradient(circle at 35% 35%, #3a3a3a, #111); color:#888; border-color:rgba(100,100,100,0.5); box-shadow:none; }
+
+/* ── Status pip (bottom-left of art, small) ── */
+.status-pip {
+  position:absolute; bottom:34px; left:3px;
+  font-size:7px; color:rgba(80,180,100,0.8);
+  z-index:6; line-height:1;
+}
+
+/* ── Active glow ring ── */
+.card.active .card-frame::before {
+  content:'';
+  position:absolute; inset:-1px;
+  border-radius:8px 8px 6px 6px;
+  background: linear-gradient(180deg, rgba(255,215,0,0.06), transparent 60%);
+  pointer-events:none;
+}
+
+/* ────── CONTROLS ────── */
+.controls-bar {
+  height:175px; background:rgba(5,10,20,0.97);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 18px 18px; gap:10px;
+  border-top:1px solid rgba(64,192,255,0.1);
+}
+.joystick-zone {
+  width:148px; height:148px; flex-shrink:0;
+  border-radius:50%; border:2px solid rgba(64,192,255,0.28);
+  background:rgba(64,192,255,0.035); position:relative;
+}
+.joystick-thumb {
+  position:absolute; width:42px; height:42px; border-radius:50%;
+  border:1px solid rgba(64,192,255,0.5); background:rgba(64,192,255,0.14);
+  top:50%; left:50%; transform:translate(-50%,-50%);
+}
+.j-arrow { position:absolute; font-size:13px; color:rgba(64,192,255,0.42); }
+.action-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.act-btn {
+  width:68px; height:68px;
+  border:1px solid rgba(64,192,255,0.28); border-radius:10px;
+  background:rgba(64,192,255,0.055);
+  display:flex; align-items:center; justify-content:center;
+  flex-direction:column; font-size:10px; color:#40c0ff;
+  text-align:center; line-height:1.3; gap:2px;
+}
+.act-btn .icon { font-size:17px; }
+</style>
+</head>
+<body>
+<h2>HEARTHSTONE-INSPIRED CARD MOCKUP</h2>
+
+<div class="phone">
+  <div class="game-world">
+    <div class="scanlines"></div>
+    <svg width="390" height="100%" style="position:absolute;inset:0;">
+      <rect width="390" height="100%" fill="#030810"/>
+      <rect x="0" y="0" width="390" height="28" fill="#1a3a6a" opacity=".85"/>
+      <rect x="0" y="0" width="28" height="490" fill="#1a3a6a" opacity=".85"/>
+      <rect x="362" y="0" width="28" height="490" fill="#1a3a6a" opacity=".85"/>
+      <rect x="80" y="80" width="80" height="18" fill="#1a3a6a" opacity=".8"/>
+      <rect x="200" y="80" width="100" height="18" fill="#1a3a6a" opacity=".8"/>
+      <rect x="80" y="80" width="18" height="110" fill="#1a3a6a" opacity=".8"/>
+      <rect x="240" y="98" width="18" height="80" fill="#1a3a6a" opacity=".8"/>
+      <rect x="80" y="278" width="140" height="18" fill="#1a3a6a" opacity=".8"/>
+      <rect x="280" y="198" width="18" height="100" fill="#1a3a6a" opacity=".8"/>
+      <g stroke="rgba(40,80,140,0.18)" stroke-width="0.5">
+        <line x1="28" y1="28" x2="28" y2="460"/> <line x1="60" y1="28" x2="60" y2="460"/>
+        <line x1="92" y1="28" x2="92" y2="460"/> <line x1="124" y1="28" x2="124" y2="460"/>
+        <line x1="156" y1="28" x2="156" y2="460"/> <line x1="188" y1="28" x2="188" y2="460"/>
+        <line x1="220" y1="28" x2="220" y2="460"/> <line x1="252" y1="28" x2="252" y2="460"/>
+        <line x1="284" y1="28" x2="284" y2="460"/> <line x1="316" y1="28" x2="316" y2="460"/>
+        <line x1="28" y1="60" x2="362" y2="60"/>   <line x1="28" y1="92" x2="362" y2="92"/>
+        <line x1="28" y1="124" x2="362" y2="124"/> <line x1="28" y1="156" x2="362" y2="156"/>
+        <line x1="28" y1="188" x2="362" y2="188"/> <line x1="28" y1="220" x2="362" y2="220"/>
+        <line x1="28" y1="252" x2="362" y2="252"/> <line x1="28" y1="284" x2="362" y2="284"/>
+      </g>
+      <path d="M195,240 L250,185 L290,240 L250,278 Z" fill="rgba(128,224,255,0.04)" stroke="rgba(128,224,255,0.1)" stroke-width="1"/>
+      <path d="M312,158 L262,192 L222,222" stroke="rgba(255,64,64,0.3)" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+      <circle cx="195" cy="240" r="9" fill="rgba(128,224,255,0.22)" stroke="#80e0ff" stroke-width="2.5"/>
+      <line x1="195" y1="240" x2="218" y2="217" stroke="#80e0ff" stroke-width="1.5"/>
+      <text x="191" y="243" font-size="8" fill="#80e0ff" font-family="Courier New">1</text>
+      <circle cx="158" cy="262" r="7" fill="rgba(64,192,255,0.12)" stroke="#40c0ff" stroke-width="1.5"/>
+      <text x="154" y="265" font-size="8" fill="#40c0ff" font-family="Courier New">2</text>
+      <circle cx="312" cy="158" r="8" fill="rgba(255,64,64,0.18)" stroke="#ff4040" stroke-width="1.5"/>
+      <rect x="338" y="208" width="18" height="18" fill="rgba(192,160,64,0.25)" stroke="#c0a040" stroke-width="1.5" rx="2"/>
+      <text x="347" y="221" font-size="10" fill="#c0a040" text-anchor="middle">↑</text>
+      <text x="34" y="460" font-size="8" fill="rgba(48,80,96,0.7)" font-family="Courier New">60 FPS</text>
+    </svg>
+  </div>
+
+  <!-- HUD STRIP -->
+  <div class="hud-strip">
+
+    <!-- 1: ACTIVE — James, Captain, 85hp OK -->
+    <div class="card active">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-a">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">James</div></div>
+        <div class="status-pip">● OK</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Captain</div>
+          <div class="kills-txt">K:3</div>
+        </div>
+      </div>
+      <div class="index-gem">1</div>
+      <div class="health-gem hp-ok">85</div>
+    </div>
+
+    <!-- 2: Hans, Private, 58hp MID -->
+    <div class="card">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-b beard">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">Hans</div></div>
+        <div class="status-pip" style="color:rgba(200,160,40,0.8)">● MID</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Private</div>
+          <div class="kills-txt">K:1</div>
+        </div>
+      </div>
+      <div class="index-gem">2</div>
+      <div class="health-gem hp-mid">58</div>
+    </div>
+
+    <!-- 3: Charles, Private, 100hp OK -->
+    <div class="card">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-c">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">Charles</div></div>
+        <div class="status-pip">● OK</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Private</div>
+          <div class="kills-txt">K:0</div>
+        </div>
+      </div>
+      <div class="index-gem">3</div>
+      <div class="health-gem hp-ok">100</div>
+    </div>
+
+    <!-- 4: John, Ofc.Cadet, 18hp LOW -->
+    <div class="card">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-d">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">John</div></div>
+        <div class="status-pip" style="color:rgba(255,80,80,0.9)">▲ LOW</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Ofc.Cadet</div>
+          <div class="kills-txt">K:2</div>
+        </div>
+      </div>
+      <div class="index-gem">4</div>
+      <div class="health-gem hp-low">18</div>
+    </div>
+
+    <!-- 5: Edward, Lt., DEAD -->
+    <div class="card dead">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-b">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">Edward</div></div>
+        <div class="status-pip" style="color:rgba(150,80,80,0.8)">✕ DEAD</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Lt.</div>
+          <div class="kills-txt">K:4</div>
+        </div>
+      </div>
+      <div class="index-gem" style="background:radial-gradient(circle at 35% 35%,#333,#111);color:#555;border-color:rgba(80,80,80,0.4)">5</div>
+      <div class="health-gem hp-dead">0</div>
+    </div>
+
+    <!-- 6: Maria, Medic, 72hp OK -->
+    <div class="card">
+      <div class="card-frame">
+        <div class="art">
+          <div class="face hair-a">
+            <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+          </div>
+        </div>
+        <div class="name-banner"><div class="name-text">Maria</div></div>
+        <div class="status-pip">● OK</div>
+        <div class="card-bottom">
+          <div class="rank-txt">Medic</div>
+          <div class="kills-txt">K:0</div>
+        </div>
+      </div>
+      <div class="index-gem">6</div>
+      <div class="health-gem hp-ok">72</div>
+    </div>
+
+  </div><!-- /hud-strip -->
+
+  <!-- CONTROLS -->
+  <div class="controls-bar">
+    <div class="joystick-zone">
+      <div class="j-arrow" style="top:8px;left:50%;transform:translateX(-50%)">▲</div>
+      <div class="j-arrow" style="bottom:8px;left:50%;transform:translateX(-50%)">▼</div>
+      <div class="j-arrow" style="left:8px;top:50%;transform:translateY(-50%)">◀</div>
+      <div class="j-arrow" style="right:8px;top:50%;transform:translateY(-50%)">▶</div>
+      <div class="joystick-thumb"></div>
+    </div>
+    <div class="action-grid">
+      <div class="act-btn"><div class="icon">⇥</div>NEXT<br>UNIT</div>
+      <div class="act-btn"><div class="icon">↵</div>USE<br>STAIRS</div>
+      <div class="act-btn"><div class="icon">👣</div>WALK</div>
+      <div class="act-btn"><div class="icon">⚡</div>HUSTLE</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
