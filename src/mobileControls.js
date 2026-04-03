@@ -7,7 +7,7 @@ const MobileControls = {
     _walkOn: false,
     _cards: [],       // DOM elements, one per playerInfo slot
     _ctrlH: 175,      // controls bar height px
-    _hudH:  120,      // squad strip height px
+    _hudH:  128,      // squad strip height px
 
     // ── Called from gameScene.parseAndInit ──────────────────────────────────
     init() {
@@ -210,20 +210,16 @@ const MobileControls = {
     _buildCard(idx) {
         const el = document.createElement('div');
         el.style.cssText = `
-            flex-shrink:0; width:80px;
-            border:1px solid rgba(64,192,255,0.18);
-            border-radius:5px;
-            background:rgba(64,192,255,0.03);
-            display:flex; flex-direction:column;
-            padding:4px 4px 3px;
-            gap:2px;
+            flex-shrink:0; width:86px;
+            position:relative; overflow:hidden;
+            border-radius:6px;
+            background:#040c18;
+            border:1px solid rgba(40,100,160,0.35);
             cursor:pointer;
             touch-action:manipulation;
-            font-family:'Courier New',monospace;
         `;
 
-        // Tap to select unit — passive so horizontal scroll still works;
-        // only fire if finger didn't move much (tap, not scroll)
+        // Tap to select — passive so horizontal scroll still works
         let _tapStartX = 0, _tapStartY = 0;
         el.addEventListener('touchstart', (e) => {
             _tapStartX = e.touches[0].clientX;
@@ -237,82 +233,149 @@ const MobileControls = {
             }
         }, { passive: true });
 
-        // Top row: portrait + name/rank
-        const topRow = document.createElement('div');
-        topRow.style.cssText = 'display:flex;gap:3px;align-items:flex-start;';
+        // Portrait canvas — fills the full card
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+        el.appendChild(canvas);
 
-        const portrait = document.createElement('div');
-        portrait.style.cssText = `
-            width:28px; height:32px; flex-shrink:0;
-            border:1px solid rgba(64,192,255,0.3);
-            background:#030d1a; border-radius:2px;
-            position:relative; overflow:hidden;
+        // Index — top left
+        const idxEl = document.createElement('div');
+        idxEl.style.cssText = `
+            position:absolute;top:5px;left:6px;z-index:2;
+            font-family:'Courier New',monospace;
+            font-size:11px;font-weight:bold;color:#b0d8f8;
+            text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 8px rgba(0,0,0,0.8);
+            line-height:1;pointer-events:none;
         `;
-        // Simple CSS face
-        portrait.innerHTML = `
-            <div style="position:absolute;width:14px;height:16px;
-                border-radius:50% 50% 40% 40%;background:rgba(64,192,255,0.2);
-                top:5px;left:6px;"></div>
-            <div style="position:absolute;width:5px;height:2px;
-                border-radius:50%;background:rgba(64,192,255,0.28);
-                bottom:5px;left:11px;"></div>
-        `;
+        idxEl.textContent = String(idx + 1);
+        el.appendChild(idxEl);
 
+        // HP% — top right
+        const hpEl = document.createElement('div');
+        hpEl.style.cssText = `
+            position:absolute;top:5px;right:6px;z-index:2;
+            font-family:'Courier New',monospace;
+            font-size:10px;font-weight:bold;
+            text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 8px rgba(0,0,0,0.8);
+            text-align:right;line-height:1;pointer-events:none;
+        `;
+        el.appendChild(hpEl);
+
+        // Name + title block — bottom overlay with gradient
         const nameBlock = document.createElement('div');
-        nameBlock.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;overflow:hidden;';
-
-        const idxName = document.createElement('div');
-        idxName.style.cssText = `
-            font-size:10px; font-weight:bold; color:#80e0ff;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        nameBlock.style.cssText = `
+            position:absolute;bottom:0;left:0;right:0;z-index:2;
+            padding:16px 4px 5px;
+            background:linear-gradient(transparent,rgba(3,8,18,0.72) 40%);
+            display:flex;flex-direction:column;align-items:center;gap:1px;
+            pointer-events:none;
         `;
-
-        const rank = document.createElement('div');
-        rank.style.cssText = `
-            font-size:8.5px; color:#305870;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-            line-height:1.2;
+        const nameEl = document.createElement('div');
+        nameEl.style.cssText = `
+            font-family:'Courier New',monospace;
+            font-size:10px;font-weight:bold;color:#c8e8ff;
+            text-shadow:0 1px 5px rgba(0,0,0,1),0 0 10px rgba(0,0,0,0.9);
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            max-width:78px;text-align:center;line-height:1.2;
         `;
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = `
+            font-family:'Courier New',monospace;
+            font-size:7.5px;color:rgba(140,210,240,0.9);
+            text-shadow:0 1px 4px rgba(0,0,0,0.9);
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            max-width:78px;text-align:center;line-height:1.2;
+        `;
+        nameBlock.appendChild(nameEl);
+        nameBlock.appendChild(titleEl);
+        el.appendChild(nameBlock);
 
-        nameBlock.appendChild(idxName);
-        nameBlock.appendChild(rank);
-        topRow.appendChild(portrait);
-        topRow.appendChild(nameBlock);
+        return { el, canvas, hpEl, nameEl, titleEl, drawn: false };
+    },
 
-        // Health row
-        const healthRow = document.createElement('div');
-        healthRow.style.cssText = 'display:flex;align-items:center;gap:3px;';
+    // ── Canvas 2D portrait renderer (mirrors portrait.js for HTML overlay) ───
+    _drawPortrait(canvas, pInfo) {
+        const W = canvas.width, H = canvas.height;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, W, H);
 
-        const bar = document.createElement('div');
-        bar.style.cssText = `flex:1;height:4px;background:rgba(64,192,255,0.12);border-radius:2px;overflow:hidden;`;
-        const fill = document.createElement('div');
-        fill.style.cssText = 'height:100%;border-radius:2px;width:100%;background:#40c0a0;transition:width .2s;';
-        bar.appendChild(fill);
+        const cx = W * 0.5;
+        const cy = H * 0.36; // shifted up — forehead clips at top, more face visible
 
-        const hpNum = document.createElement('div');
-        hpNum.style.cssText = 'font-size:9px;color:#406070;min-width:20px;text-align:right;';
+        let fWidth  = (H * 0.72) / pInfo.headRatio;
+        let fHeight = H * 0.72;
+        if (fWidth > W * 0.88) { fWidth = W * 0.88; fHeight = W * 0.88 * pInfo.headRatio; }
 
-        healthRow.appendChild(bar);
-        healthRow.appendChild(hpNum);
+        ctx.strokeStyle = '#40a0c0';
+        ctx.lineWidth = 1;
+        ctx.shadowColor = 'rgba(40,120,160,0.4)';
+        ctx.shadowBlur = 2;
 
-        // Bottom row: kills + status
-        const bottomRow = document.createElement('div');
-        bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+        const sgn = x => x >= 0 ? 1 : -1;
+        const cheekFn = a => {
+            const x = Math.cos(a), y = Math.sin(a);
+            if (y > 0) return {
+                x: (x + Math.sin(y*Math.PI)*sgn(x)*-pInfo.cheekStrength + Math.sin(y*Math.PI*-2)*-pInfo.cheekWaveStrength*sgn(x)) * fWidth*0.5,
+                y: y * fHeight*0.5
+            };
+            return { x: x*fWidth*0.5, y: y*fHeight*0.5 };
+        };
+        const L = (x1,y1,x2,y2) => { ctx.beginPath(); ctx.moveTo(cx+x1,cy+y1); ctx.lineTo(cx+x2,cy+y2); ctx.stroke(); };
 
-        const kills = document.createElement('div');
-        kills.style.cssText = 'font-size:9px;color:#304858;';
+        // Eyes
+        const N = 18, eyeOff = fWidth*0.2*pInfo.eyeSpacing;
+        const eyeW = fWidth*0.2*pInfo.eyeWidth, eyeH = eyeW*0.33*pInfo.eyeHeight;
+        if (pInfo.eyeStyle < 0) {
+            for (let i=0;i<N;i++) {
+                const a1=i*Math.PI*2/N, a2=(i+1)*Math.PI*2/N;
+                L( eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeH*.5,  eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeH*.5);
+                L(-eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeH*.5, -eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeH*.5);
+            }
+        } else if (pInfo.eyeStyle === 0) {
+            const iW = eyeW*0.8;
+            for (let i=0;i<N;i++) {
+                const a1=i*Math.PI*2/N, a2=(i+1)*Math.PI*2/N;
+                L( eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeW*.5,  eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeW*.5);
+                L(-eyeOff+Math.cos(a1)*eyeW*.5, Math.sin(a1)*eyeW*.5, -eyeOff+Math.cos(a2)*eyeW*.5, Math.sin(a2)*eyeW*.5);
+                L( eyeOff+Math.cos(a1)*iW*.5, Math.sin(a1)*iW*.5,  eyeOff+Math.cos(a2)*iW*.5, Math.sin(a2)*iW*.5);
+                L(-eyeOff+Math.cos(a1)*iW*.5, Math.sin(a1)*iW*.5, -eyeOff+Math.cos(a2)*iW*.5, Math.sin(a2)*iW*.5);
+            }
+        } else {
+            const pts=[[eyeW*.5,eyeH*.5],[-eyeW*.5,eyeH*.5],[-eyeW*.5,-eyeH*.5],[eyeW*.5,-eyeH*.5]];
+            for (let i=0;i<4;i++) { const [sx,sy]=pts[i],[ex,ey]=pts[(i+1)%4]; L(eyeOff+sx,sy,eyeOff+ex,ey); L(-eyeOff+sx,sy,-eyeOff+ex,ey); }
+        }
 
-        const status = document.createElement('div');
-        status.style.cssText = 'font-size:9px;';
+        // Mouth
+        const mP=fHeight*0.3*pInfo.mouthOffset, mM=mP-mP*pInfo.mouthPout, mW=fWidth*0.1*pInfo.mouthWidth;
+        L(-mW,mP,0,mM); L(mW,mP,0,mM);
 
-        bottomRow.appendChild(kills);
-        bottomRow.appendChild(status);
+        // Nose + nostrils
+        const nH=mP*0.75*pInfo.noseHeight, nSW=(eyeOff-eyeW*.5)*.4*pInfo.noseWidth, nEW=nSW*1.8;
+        L(-nSW,0,-nEW,nH); L(nSW,0,nEW,nH);
+        for (let i=0;i<6;i++) {
+            const a1=Math.PI*-.4+i*Math.PI*.8/6, a2=Math.PI*-.4+(i+1)*Math.PI*.8/6;
+            L( nEW+Math.cos(a1)*nSW, nH+Math.sin(a1)*nSW*1.2,  nEW+Math.cos(a2)*nSW, nH+Math.sin(a2)*nSW*1.2);
+            L(-nEW-Math.cos(a1)*nSW, nH+Math.sin(a1)*nSW*1.2, -nEW-Math.cos(a2)*nSW, nH+Math.sin(a2)*nSW*1.2);
+        }
 
-        el.appendChild(topRow);
-        el.appendChild(healthRow);
-        el.appendChild(bottomRow);
+        // Head outline
+        for (let i=0;i<32;i++) { const p1=cheekFn(i*Math.PI*2/32),p2=cheekFn((i+1)*Math.PI*2/32); L(p1.x,p1.y,p2.x,p2.y); }
 
-        return { el, idxName, rank, fill, hpNum, kills, status };
+        // Hair
+        if (pInfo.hairStyle===0) {
+            for (let i=0;i<=14;i++) { const a=i*Math.PI*-1/15,p=cheekFn(a); L(p.x,p.y,Math.cos(a)*fWidth*.5,Math.sin(a)*fHeight*.2); }
+        } else if (pInfo.hairStyle===1) {
+            for (let i=0;i<=14;i++) { const a=i*Math.PI*-1/15,p=cheekFn(a); let ya=a+Math.PI*.25; if(ya>0)ya-=Math.PI; L(p.x,p.y,Math.cos(a)*fWidth*.5,Math.max(p.y,Math.sin(ya)*fHeight*.2)); }
+        } else if (pInfo.hairStyle===2) {
+            for (let i=0;i<=14;i++) { const a=i*Math.PI*-1/15,p=cheekFn(a); const ny=fHeight*-.5+Math.sin(a+Math.PI)*fHeight*.2; L(p.x,Math.max(p.y,ny),Math.cos(a)*fWidth*.5,Math.sin(a)*fHeight*.2); }
+        }
+
+        // Beard
+        if (pInfo.beardStyle===0) {
+            for (let i=0;i<=14;i++) { const a=i*Math.PI/15,p=cheekFn(a); L(p.x,p.y,Math.cos(a)*fWidth*.5,Math.sin(a)*nH*1.3); }
+        } else if (pInfo.beardStyle===1) {
+            for (let i=0;i<=14;i++) { const a=i*Math.PI/15,p=cheekFn(a); let tx=Math.cos(a)*fWidth*.5; const ty=Math.sin(a)*fHeight*.4; if(p.x<0)tx=Math.max(p.x,tx);else tx=Math.min(p.x,tx); L(p.x,p.y,tx,Math.min(p.y,ty)); }
+        }
     },
 
     // ── Called each frame from gameScene.gameRender ──────────────────────────
@@ -326,40 +389,37 @@ const MobileControls = {
             const actor = info.actor;
             const dead = !actor || actor.isDead || info.status === 'DEAD';
 
+            // Draw portrait once when dimensions are known
+            if (!c.drawn && info.portrait) {
+                const cw = c.el.offsetWidth  || 86;
+                const ch = c.el.offsetHeight || (this._hudH - 10);
+                c.canvas.width  = cw;
+                c.canvas.height = ch;
+                this._drawPortrait(c.canvas, info.portrait);
+                c.drawn = true;
+            }
+
             // Active highlight
-            c.el.style.borderColor  = isActive ? 'rgba(128,224,255,0.75)' : 'rgba(64,192,255,0.18)';
-            c.el.style.background   = isActive ? 'rgba(64,192,255,0.09)'  : 'rgba(64,192,255,0.03)';
-            c.el.style.opacity      = dead ? '0.38' : '1';
+            c.el.style.borderColor = isActive ? 'rgba(128,200,255,0.75)' : 'rgba(40,100,160,0.35)';
+            c.el.style.opacity     = dead ? '0.38' : '1';
 
-            c.idxName.textContent   = `${i+1}· ${info.fName}`;
-            c.rank.textContent      = info.rank;
-            c.kills.textContent     = `K:${info.kills}`;
+            // Name + title
+            c.nameEl.textContent  = info.fName;
+            c.titleEl.textContent = info.rank;
 
+            // HP%
             if (dead) {
-                c.fill.style.width      = '0%';
-                c.fill.style.background = '#804040';
-                c.hpNum.style.color     = '#804040';
-                c.hpNum.textContent     = '0';
-                c.status.textContent    = '✕ DEAD';
-                c.status.style.color    = '#804040';
+                c.hpEl.textContent = '0%';
+                c.hpEl.style.color = 'rgba(100,60,60,0.7)';
             } else {
                 const hp    = Math.ceil(actor.health);
                 const maxHp = actor.type.maxHealth;
-                const pct   = Math.max(0, Math.min(100, hp / maxHp * 100));
-                let color   = '#40c0a0';
-                let statusTxt = '● OK';
-                let statusCol = '#40c080';
-                if (pct < 33) {
-                    color = '#ff4040'; statusTxt = '▲ LOW'; statusCol = '#ff4040';
-                } else if (pct < 66) {
-                    color = '#c0a040'; statusTxt = '● MID'; statusCol = '#c0a040';
-                }
-                c.fill.style.width      = pct + '%';
-                c.fill.style.background = color;
-                c.hpNum.style.color     = color;
-                c.hpNum.textContent     = hp;
-                c.status.textContent    = statusTxt;
-                c.status.style.color    = statusCol;
+                const pct   = Math.max(0, Math.min(100, Math.round(hp / maxHp * 100)));
+                let color = '#40c0a0';
+                if (pct < 33) color = '#ff5555';
+                else if (pct < 66) color = '#d4a020';
+                c.hpEl.textContent = pct + '%';
+                c.hpEl.style.color = color;
             }
         }
     },
