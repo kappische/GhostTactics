@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1a2e; display:flex; align-items:center; justify-content:center;
+       gap:40px; min-height:100vh; font-family:'Courier New',monospace; padding:20px; }
+
+.phone {
+    width:390px; height:844px;
+    background:#050a14;
+    border:3px solid #304060;
+    border-radius:40px;
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    box-shadow: 0 0 60px rgba(64,192,255,0.15);
+    flex-shrink:0;
+}
+
+/* ── Game world ── */
+.game-world {
+    flex:1; background:#030810; position:relative; overflow:hidden;
+    border-bottom:1px solid #1a3050;
+}
+.scanlines {
+    position:absolute; inset:0; pointer-events:none; z-index:10;
+    background: repeating-linear-gradient(to bottom,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px);
+}
+
+/* ── HUD strip ── */
+.hud-strip {
+    height:110px; background:#050a14;
+    border-top:1px solid rgba(64,192,255,0.25);
+    border-bottom:1px solid rgba(64,192,255,0.12);
+    display:flex; align-items:stretch;
+    padding:6px 6px; gap:5px;
+    overflow-x:auto; overflow-y:hidden;
+}
+
+/* Portrait-first card */
+.squad-card {
+    flex-shrink:0; width:86px;
+    border:1px solid rgba(64,192,255,0.18);
+    border-radius:5px;
+    background:rgba(0,8,20,0.8);
+    display:flex; flex-direction:column;
+    overflow:hidden; cursor:pointer;
+    position:relative;
+}
+.squad-card.active {
+    border-color:rgba(128,224,255,0.8);
+    box-shadow:0 0 8px rgba(64,192,255,0.2) inset;
+}
+.squad-card.dead { opacity:0.35; }
+
+/* portrait area */
+.portrait-area {
+    flex:1;
+    position:relative;
+    background:#030d1a;
+    overflow:hidden;
+    min-height:0;
+}
+/* CSS face */
+.face {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+}
+.face-head {
+    width:44px; height:52px;
+    border-radius:50% 50% 42% 42%;
+    background:rgba(64,192,255,0.18);
+    border:1px solid rgba(64,192,255,0.3);
+    position:relative;
+}
+.face-eyes {
+    position:absolute; top:16px; left:5px; right:5px;
+    display:flex; justify-content:space-between;
+}
+.face-eye {
+    width:9px; height:6px; border-radius:50%;
+    background:rgba(64,192,255,0.5);
+}
+.face-mouth {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    width:14px; height:4px; border-radius:50%;
+    background:rgba(64,192,255,0.3);
+}
+.hair-1 .face-head::after { content:''; position:absolute; top:-6px; left:3px; right:3px;
+    height:10px; background:rgba(64,192,255,0.22); border-radius:50% 50% 0 0; }
+.hair-2 .face-head::after { content:''; position:absolute; top:-4px; left:-2px; right:-2px;
+    height:8px; background:rgba(64,192,255,0.2); border-radius:50% 50% 0 0; }
+.hair-3 .face-head::before { content:''; position:absolute; top:-2px; right:2px;
+    width:14px; height:6px; background:rgba(64,192,255,0.2); border-radius:3px; }
+.beard-1 .face-head { border-bottom-width:3px; border-bottom-color:rgba(64,192,255,0.25); }
+
+/* name + rank overlay */
+.portrait-overlay {
+    position:absolute; bottom:0; left:0; right:0;
+    background:linear-gradient(transparent, rgba(3,10,25,0.92) 40%);
+    padding:10px 4px 3px;
+    display:flex; flex-direction:column; gap:1px;
+}
+.overlay-name {
+    font-size:9.5px; font-weight:bold; color:#80e0ff;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    line-height:1.2;
+}
+.overlay-rank {
+    font-size:8px; color:#305870; line-height:1.2;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* bottom strip */
+.card-bottom {
+    padding:3px 4px 3px;
+    display:flex; flex-direction:column; gap:2px;
+    background:#040c1c;
+    border-top:1px solid rgba(64,192,255,0.1);
+}
+.health-row { display:flex; align-items:center; gap:3px; }
+.health-bar { flex:1; height:4px; background:rgba(64,192,255,0.1); border-radius:2px; overflow:hidden; }
+.health-fill { height:100%; border-radius:2px; }
+.health-num { font-size:9px; min-width:20px; text-align:right; }
+.kills-status { display:flex; justify-content:space-between; align-items:center; }
+.kills-txt { font-size:8.5px; color:#304858; }
+.status-dot { font-size:8.5px; }
+
+/* ── Controls ── */
+.controls-bar {
+    height:175px; background:rgba(5,10,20,0.97);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 18px 18px; gap:10px;
+    border-top:1px solid rgba(64,192,255,0.1);
+}
+.joystick-zone {
+    width:148px; height:148px; flex-shrink:0;
+    border-radius:50%; border:2px solid rgba(64,192,255,0.28);
+    background:rgba(64,192,255,0.035); position:relative;
+}
+.joystick-thumb {
+    position:absolute; width:42px; height:42px; border-radius:50%;
+    border:1px solid rgba(64,192,255,0.5); background:rgba(64,192,255,0.14);
+    top:50%; left:50%; transform:translate(-50%,-50%);
+}
+.j-arrow { position:absolute; font-size:13px; color:rgba(64,192,255,0.42); }
+.action-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.act-btn {
+    width:68px; height:68px;
+    border:1px solid rgba(64,192,255,0.28); border-radius:10px;
+    background:rgba(64,192,255,0.055);
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; font-size:10px; color:#40c0ff;
+    text-align:center; line-height:1.3; gap:2px;
+}
+.act-btn .icon { font-size:17px; }
+
+.label {
+    font-size:11px; color:rgba(64,192,255,0.55);
+    text-align:center; margin-top:6px;
+}
+</style>
+</head>
+<body>
+
+<div>
+<div class="phone">
+  <div class="game-world">
+    <div class="scanlines"></div>
+    <svg width="390" height="100%" style="position:absolute;inset:0;">
+      <rect width="390" height="100%" fill="#030810"/>
+      <rect x="0"   y="0"   width="390" height="28" fill="#1a3a6a" opacity=".85"/>
+      <rect x="0"   y="0"   width="28"  height="462" fill="#1a3a6a" opacity=".85"/>
+      <rect x="362" y="0"   width="28"  height="462" fill="#1a3a6a" opacity=".85"/>
+      <rect x="80"  y="80"  width="80"  height="18"  fill="#1a3a6a" opacity=".8"/>
+      <rect x="200" y="80"  width="100" height="18"  fill="#1a3a6a" opacity=".8"/>
+      <rect x="80"  y="80"  width="18"  height="110" fill="#1a3a6a" opacity=".8"/>
+      <rect x="240" y="98"  width="18"  height="80"  fill="#1a3a6a" opacity=".8"/>
+      <rect x="80"  y="278" width="140" height="18"  fill="#1a3a6a" opacity=".8"/>
+      <rect x="280" y="198" width="18"  height="100" fill="#1a3a6a" opacity=".8"/>
+      <g stroke="rgba(40,80,140,0.18)" stroke-width="0.5">
+        <line x1="28" y1="28" x2="28" y2="434"/> <line x1="60" y1="28" x2="60" y2="434"/>
+        <line x1="92" y1="28" x2="92" y2="434"/> <line x1="124" y1="28" x2="124" y2="434"/>
+        <line x1="156" y1="28" x2="156" y2="434"/> <line x1="188" y1="28" x2="188" y2="434"/>
+        <line x1="220" y1="28" x2="220" y2="434"/> <line x1="252" y1="28" x2="252" y2="434"/>
+        <line x1="284" y1="28" x2="284" y2="434"/> <line x1="316" y1="28" x2="316" y2="434"/>
+        <line x1="28" y1="60" x2="362" y2="60"/>   <line x1="28" y1="92" x2="362" y2="92"/>
+        <line x1="28" y1="124" x2="362" y2="124"/> <line x1="28" y1="156" x2="362" y2="156"/>
+        <line x1="28" y1="188" x2="362" y2="188"/> <line x1="28" y1="220" x2="362" y2="220"/>
+        <line x1="28" y1="252" x2="362" y2="252"/> <line x1="28" y1="284" x2="362" y2="284"/>
+      </g>
+      <path d="M195,230 L250,175 L290,230 L250,268 Z" fill="rgba(128,224,255,0.04)" stroke="rgba(128,224,255,0.1)" stroke-width="1"/>
+      <path d="M312,148 L262,182 L222,212" stroke="rgba(255,64,64,0.3)" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+      <circle cx="195" cy="230" r="9"  fill="rgba(128,224,255,0.22)" stroke="#80e0ff" stroke-width="2.5"/>
+      <line x1="195" y1="230" x2="218" y2="207" stroke="#80e0ff" stroke-width="1.5"/>
+      <text x="191" y="233" font-size="8" fill="#80e0ff" font-family="Courier New">1</text>
+      <circle cx="158" cy="252" r="7" fill="rgba(64,192,255,0.12)" stroke="#40c0ff" stroke-width="1.5"/>
+      <text x="154" y="255" font-size="8" fill="#40c0ff" font-family="Courier New">2</text>
+      <circle cx="312" cy="148" r="8" fill="rgba(255,64,64,0.18)" stroke="#ff4040" stroke-width="1.5"/>
+      <rect x="338" y="198" width="18" height="18" fill="rgba(192,160,64,0.25)" stroke="#c0a040" stroke-width="1.5" rx="2"/>
+      <text x="347" y="211" font-size="10" fill="#c0a040" text-anchor="middle">↑</text>
+      <text x="34" y="450" font-size="8" fill="rgba(48,80,96,0.7)" font-family="Courier New">60 FPS</text>
+    </svg>
+  </div>
+
+  <!-- HUD STRIP -->
+  <div class="hud-strip">
+
+    <div class="squad-card active">
+      <div class="portrait-area">
+        <div class="face hair-1">
+          <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+        </div>
+        <div class="portrait-overlay">
+          <div class="overlay-name">1· James</div>
+          <div class="overlay-rank">Captain</div>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="health-row">
+          <div class="health-bar"><div class="health-fill" style="width:85%;background:#40c0a0"></div></div>
+          <div class="health-num" style="color:#40c0a0">85</div>
+        </div>
+        <div class="kills-status">
+          <div class="kills-txt">K:3</div>
+          <div class="status-dot" style="color:#40c080">● OK</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="squad-card">
+      <div class="portrait-area">
+        <div class="face hair-2 beard-1">
+          <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+        </div>
+        <div class="portrait-overlay">
+          <div class="overlay-name">2· Hans</div>
+          <div class="overlay-rank">Private</div>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="health-row">
+          <div class="health-bar"><div class="health-fill" style="width:58%;background:#c0a040"></div></div>
+          <div class="health-num" style="color:#c0a040">58</div>
+        </div>
+        <div class="kills-status">
+          <div class="kills-txt">K:1</div>
+          <div class="status-dot" style="color:#c0a040">● MID</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="squad-card">
+      <div class="portrait-area">
+        <div class="face hair-3">
+          <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+        </div>
+        <div class="portrait-overlay">
+          <div class="overlay-name">3· Charles</div>
+          <div class="overlay-rank">Private</div>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="health-row">
+          <div class="health-bar"><div class="health-fill" style="width:100%;background:#40c0a0"></div></div>
+          <div class="health-num" style="color:#40c0a0">100</div>
+        </div>
+        <div class="kills-status">
+          <div class="kills-txt">K:0</div>
+          <div class="status-dot" style="color:#40c080">● OK</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="squad-card">
+      <div class="portrait-area">
+        <div class="face hair-1">
+          <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+        </div>
+        <div class="portrait-overlay">
+          <div class="overlay-name">4· John</div>
+          <div class="overlay-rank">Ofc.Cadet</div>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="health-row">
+          <div class="health-bar"><div class="health-fill" style="width:18%;background:#ff4040"></div></div>
+          <div class="health-num" style="color:#ff4040">18</div>
+        </div>
+        <div class="kills-status">
+          <div class="kills-txt">K:2</div>
+          <div class="status-dot" style="color:#ff4040">▲ LOW</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="squad-card dead">
+      <div class="portrait-area">
+        <div class="face hair-2">
+          <div class="face-head"><div class="face-eyes"><div class="face-eye"></div><div class="face-eye"></div></div><div class="face-mouth"></div></div>
+        </div>
+        <div class="portrait-overlay">
+          <div class="overlay-name">5· Edward</div>
+          <div class="overlay-rank">Lt.</div>
+        </div>
+      </div>
+      <div class="card-bottom">
+        <div class="health-row">
+          <div class="health-bar"><div class="health-fill" style="width:0%;background:#804040"></div></div>
+          <div class="health-num" style="color:#804040">0</div>
+        </div>
+        <div class="kills-status">
+          <div class="kills-txt">K:4</div>
+          <div class="status-dot" style="color:#804040">✕ DEAD</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls-bar">
+    <div class="joystick-zone">
+      <div class="j-arrow" style="top:8px;left:50%;transform:translateX(-50%)">▲</div>
+      <div class="j-arrow" style="bottom:8px;left:50%;transform:translateX(-50%)">▼</div>
+      <div class="j-arrow" style="left:8px;top:50%;transform:translateY(-50%)">◀</div>
+      <div class="j-arrow" style="right:8px;top:50%;transform:translateY(-50%)">▶</div>
+      <div class="joystick-thumb"></div>
+    </div>
+    <div class="action-grid">
+      <div class="act-btn"><div class="icon">⇥</div>NEXT<br>UNIT</div>
+      <div class="act-btn"><div class="icon">↵</div>USE<br>STAIRS</div>
+      <div class="act-btn"><div class="icon">👣</div>WALK</div>
+      <div class="act-btn"><div class="icon">⚡</div>HUSTLE</div>
+    </div>
+  </div>
+</div>
+<div class="label">← 5 cards visible · 3 scroll off-screen →</div>
+</div>
+
+</body>
+</html>
